@@ -65,14 +65,6 @@ web_modules/
 # Yarn Integrity file
 .yarn-integrity
 
-# Lock files
-package-lock.json
-npm-shrinkwrap.json
-yarn.lock
-pnpm-lock.yaml
-bun.lock
-bun.lockb
-
 # dotenv environment variable files
 .env
 .env.*
