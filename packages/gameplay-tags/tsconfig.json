@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "tsBuildInfoFile": "../../node_modules/.cache/tsbuildinfo/gameplay-tags.tsbuildinfo"
+  },
+  "include": [
+    "src/**/*.ts"
+  ]
+}

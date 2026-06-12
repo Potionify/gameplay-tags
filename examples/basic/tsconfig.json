@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "../..",
+    "tsBuildInfoFile": "../../node_modules/.cache/tsbuildinfo/example-basic.tsbuildinfo"
+  },
+  "include": [
+    "../../packages/gameplay-tags/src/**/*.ts",
+    "src/**/*.ts",
+    "vite.config.ts"
+  ]
+}

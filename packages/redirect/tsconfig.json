@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@potionify/gameplay-tags": [
+        "../gameplay-tags/dist/index.d.ts"
+      ]
+    },
+    "rootDir": "src",
+    "tsBuildInfoFile": "../../node_modules/.cache/tsbuildinfo/redirect.tsbuildinfo"
+  },
+  "include": [
+    "src/**/*.ts"
+  ]
+}

@@ -65,6 +65,14 @@ web_modules/
 # Yarn Integrity file
 .yarn-integrity
 
+# Lock files
+package-lock.json
+npm-shrinkwrap.json
+yarn.lock
+pnpm-lock.yaml
+bun.lock
+bun.lockb
+
 # dotenv environment variable files
 .env
 .env.*
@@ -140,4 +148,22 @@ dist
 # Vite files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+vite.config.d.ts
+vite.config.d.ts.map
 .vite/
+
+# Local credentials
+.npmrc
+
+# Local OS/editor noise
+.DS_Store
+
+# Test artifacts
+test-results/
+playwright-report/
+
+# Agents
+.claude/*
+.codex/*
+.context/*
+.plan/*

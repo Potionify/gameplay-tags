@@ -1,0 +1,25 @@
+{
+  "name": "gameplay-tags-workspace",
+  "version": "0.1.0-alpha.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "examples/*"
+  ],
+  "scripts": {
+    "build": "npm run build -w @potionify/gameplay-tags && npm run build -w gameplay-tags && npm run build -w @potionify/gameplay-tags-example",
+    "check": "npm run typecheck && npm test && npm run build",
+    "dev": "npm run dev -w @potionify/gameplay-tags-example",
+    "preview": "npm run preview -w @potionify/gameplay-tags-example",
+    "test": "vitest run",
+    "typecheck": "tsc -p packages/gameplay-tags/tsconfig.json --noEmit && tsc -p examples/basic/tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "tsup": "^8.5.0",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5",
+    "vitest": "^3.2.2"
+  }
+}
