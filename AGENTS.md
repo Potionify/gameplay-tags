@@ -9,9 +9,7 @@ Prefer camelCase in TypeScript docs and examples. Keep Unreal-style class names 
 Run these before publishing or opening a release pull request:
 
 ```sh
-npm run typecheck
-npm test
-npm run build
+npm run check
 ```
 
-Use alpha and beta npm dist-tags before publishing anything as latest.
+Use alpha and beta npm dist-tags before publishing anything as latest. Use the manual deprecation workflow for the unscoped handoff package after it is published.

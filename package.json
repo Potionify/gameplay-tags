@@ -1,6 +1,6 @@
 {
   "name": "gameplay-tags-workspace",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0-alpha.1",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -12,6 +12,7 @@
     "check": "npm run typecheck && npm test && npm run build",
     "dev": "npm run dev -w @potionify/gameplay-tags-example",
     "preview": "npm run preview -w @potionify/gameplay-tags-example",
+    "smoke:published": "node scripts/smoke-published.mjs",
     "test": "vitest run",
     "typecheck": "tsc -p packages/gameplay-tags/tsconfig.json --noEmit && tsc -p examples/basic/tsconfig.json --noEmit"
   },

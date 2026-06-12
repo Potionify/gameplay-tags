@@ -44,6 +44,41 @@ owned.hasTag(requestGameplayTag("Note.Status"));
 owned.hasTagExact(requestGameplayTag("Note.Status"));
 ```
 
+## Dictionary Tools
+
+The manager can import and export Unreal-style table rows, restricted table rows, and redirects. The same helpers support JSON and CSV strings for note apps that want portable tag dictionaries.
+
+```ts
+import {
+  EGameplayTagSourceType,
+  GameplayTagsManager,
+  importGameplayTagDictionary,
+  stringifyGameplayTagDictionary
+} from "@potionify/gameplay-tags";
+
+const result = importGameplayTagDictionary({
+  gameplayTagList: [
+    { Tag: "Note.Status.Draft", DevComment: "Editable note" }
+  ],
+  restrictedGameplayTagList: [
+    { Tag: "Note.Internal.Archived", bAllowNonRestrictedChildren: true }
+  ],
+  gameplayTagRedirects: [
+    { OldTagName: "Note.Status.ReadyForReview", NewTagName: "Note.Status.Review" }
+  ]
+}, {
+  sourceName: "Notes",
+  sourceType: EGameplayTagSourceType.TagList
+});
+
+const json = stringifyGameplayTagDictionary(
+  GameplayTagsManager.get().exportGameplayTagDictionary(),
+  "json"
+);
+```
+
+Import results include diagnostics so applications can show duplicate tags, invalid tag strings, and redirects that point at missing tags before applying a dictionary.
+
 ## Example
 
 ```sh
@@ -71,7 +106,19 @@ npm publish -w @potionify/gameplay-tags --tag alpha
 npm publish -w gameplay-tags --tag alpha
 ```
 
-The preferred publishing path is the manual GitHub Actions `Publish` workflow. It uses the repository `NPMJS_TOKEN` secret, runs `npm run check`, defaults to a dry run, and requires an explicit confirmation before publishing with the `latest` dist-tag.
+The preferred publishing path is the manual GitHub Actions `Publish` workflow. It uses the repository `NPMJS_TOKEN` secret, runs `npm run check`, defaults to a dry run, skips workspace versions that already exist on npm, publishes with provenance, and requires an explicit confirmation before publishing with the `latest` dist-tag.
+
+Use the `Deprecate Unscoped Package` workflow after publishing `gameplay-tags`:
+
+```sh
+npm deprecate gameplay-tags@"*" "Use the official package: @potionify/gameplay-tags"
+```
+
+After publishing, run a registry smoke test:
+
+```sh
+npm run smoke:published
+```
 
 Move to beta when the API names and runtime behavior feel settled:
 
