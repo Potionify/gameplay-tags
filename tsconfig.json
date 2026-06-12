@@ -1,0 +1,14 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "./packages/gameplay-tags"
+    },
+    {
+      "path": "./packages/redirect"
+    },
+    {
+      "path": "./examples/basic"
+    }
+  ]
+}

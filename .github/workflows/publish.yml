@@ -1,0 +1,91 @@
+name: Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: Package to publish
+        required: true
+        type: choice
+        default: both
+        options:
+          - both
+          - "@potionify/gameplay-tags"
+          - gameplay-tags
+      dist-tag:
+        description: npm dist-tag
+        required: true
+        type: choice
+        default: alpha
+        options:
+          - alpha
+          - beta
+          - latest
+      dry-run:
+        description: Run npm publish without publishing
+        required: true
+        type: boolean
+        default: true
+      confirm-latest:
+        description: Required when dist-tag is latest
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    if: ${{ inputs['dist-tag'] != 'latest' || inputs['confirm-latest'] == true }}
+    runs-on: ubuntu-latest
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPMJS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - name: Publish selected package
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          publish_workspace() {
+            local workspace="$1"
+            local dry_run_flag=()
+
+            if [[ "${{ inputs['dry-run'] }}" == "true" ]]; then
+              dry_run_flag=(--dry-run)
+            fi
+
+            npm publish \
+              --workspace "$workspace" \
+              --tag "${{ inputs['dist-tag'] }}" \
+              "${dry_run_flag[@]}"
+          }
+
+          case "${{ inputs.package }}" in
+            both)
+              publish_workspace "@potionify/gameplay-tags"
+              publish_workspace "gameplay-tags"
+              ;;
+            "@potionify/gameplay-tags")
+              publish_workspace "@potionify/gameplay-tags"
+              ;;
+            gameplay-tags)
+              publish_workspace "gameplay-tags"
+              ;;
+          esac
+
+  latest-not-confirmed:
+    if: ${{ inputs['dist-tag'] == 'latest' && inputs['confirm-latest'] != true }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "Publishing with dist-tag latest requires confirm-latest=true."
+          exit 1
