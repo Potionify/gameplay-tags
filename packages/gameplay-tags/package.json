@@ -4,6 +4,11 @@
   "description": "Unreal Engine-style gameplay tags for TypeScript and JavaScript applications.",
   "license": "MIT",
   "author": "Potionify",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Potionify/gameplay-tags.git",
+    "directory": "packages/gameplay-tags"
+  },
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
