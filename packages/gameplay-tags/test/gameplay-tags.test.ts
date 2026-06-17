@@ -3,20 +3,25 @@ import {
   addNativeGameplayTag,
   EGameplayTagSourceType,
   BlueprintGameplayTagLibrary,
+  doesGameplayTagContainerMatchQuery,
   FGameplayTag,
   FGameplayTagContainer,
   FGameplayTagQuery,
   FGameplayTagQueryExpression,
+  filterGameplayTagQueryMatches,
   GameplayTag,
   GameplayTagsManager,
   importGameplayTagDictionary,
   makeGameplayTagContainer,
+  makeGameplayTagQueryFromFilters,
   parseGameplayTagDictionary,
   parseGameplayTagDictionaryIni,
+  parseGameplayTagQuery,
   redirectGameplayTagName,
   requestGameplayTagContainer,
   stringifyGameplayTagDictionary,
   stringifyGameplayTagDictionaryIni,
+  stringifyGameplayTagQuery,
   validateGameplayTagString,
   validateGameplayTagDictionary,
   requestGameplayTag
@@ -101,6 +106,88 @@ describe("gameplay tags", () => {
     expect(noStun.matches(owned)).toBe(true);
     expect(complex.matches(owned)).toBe(true);
     expect(owned.matchesQuery(complex)).toBe(true);
+  });
+
+  it("serializes and parses gameplay tag queries", () => {
+    const owned = makeGameplayTagContainer(["Note.Status.Draft", "Note.Topic.Engine"]);
+    const blocked = makeGameplayTagContainer(["Character.State.Stunned"]);
+    const query = makeGameplayTagQueryFromFilters({
+      anyTags: ["Note.Status"],
+      noTags: blocked,
+      exactAnyTags: ["Note.Topic.Engine"],
+      description: "notes in status without character states"
+    });
+    const serialized = stringifyGameplayTagQuery(query);
+    const parsed = parseGameplayTagQuery(serialized);
+    const cloned = query.clone();
+    const rootExpression = parsed.getQueryExpr();
+    const reordered = FGameplayTagQuery.buildQuery(
+      new FGameplayTagQueryExpression()
+        .allExprMatch()
+        .addExpr(new FGameplayTagQueryExpression().anyTagsExactMatch().addTag("Note.Topic.Engine"))
+        .addExpr(new FGameplayTagQueryExpression().noTagsMatch().addTag("Character.State.Stunned"))
+        .addExpr(new FGameplayTagQueryExpression().anyTagsMatch().addTag("Note.Status"))
+    );
+    const reorderedTags = FGameplayTagQuery.buildQuery(
+      new FGameplayTagQueryExpression()
+        .anyTagsMatch()
+        .addTag("Note.Topic.Rendering")
+        .addTag("Note.Topic.Engine")
+    );
+    const canonicalTags = FGameplayTagQuery.buildQuery(
+      new FGameplayTagQueryExpression()
+        .anyTagsMatch()
+        .addTag("Note.Topic.Engine")
+        .addTag("Note.Topic.Rendering")
+    );
+
+    expect(parsed.matches(owned)).toBe(true);
+    expect(doesGameplayTagContainerMatchQuery(["Note.Status.Draft", "Character.State.Stunned"], parsed)).toBe(false);
+    expect(parsed.getDescription()).toBe("notes in status without character states");
+    expect(parsed.getGameplayTagArray().map((tag) => tag.getTagName())).toEqual([
+      "Note.Status",
+      "Character.State.Stunned",
+      "Note.Topic.Engine"
+    ]);
+    expect(rootExpression.ExprType).toBe("AllExprMatch");
+    expect(rootExpression.ExprSet).toHaveLength(3);
+    expect(FGameplayTagQuery.fromJSON(JSON.parse(serialized)).equals(parsed)).toBe(true);
+    expect(FGameplayTagQueryExpression.fromJSON(rootExpression.toJSON()).equals(rootExpression)).toBe(true);
+    expect(cloned.equals(parsed)).toBe(true);
+    expect(parsed.equals(reordered)).toBe(true);
+    expect(canonicalTags.equals(reorderedTags)).toBe(true);
+    expect(() => FGameplayTagQueryExpression.fromJSON({ tags: ["Note.Status"] })).toThrow("missing");
+    expect(() => parseGameplayTagQuery(JSON.stringify({
+      expression: { type: "Bogus", tags: ["Note.Status"], expressions: [] }
+    }))).toThrow("Bogus");
+  });
+
+  it("filters records with gameplay tag query helpers", () => {
+    const notes = [
+      { title: "draft engine note", tags: ["Note.Status.Draft", "Note.Topic.Engine"] },
+      { title: "published rendering note", tags: ["Note.Status.Published", "Note.Topic.Rendering"] },
+      { title: "stunned state note", tags: ["Note.Status.Draft", "Character.State.Stunned"] }
+    ];
+    const query = makeGameplayTagQueryFromFilters({
+      anyTags: ["Note.Status"],
+      noTags: ["Character.State"],
+      exactAnyTags: ["Note.Topic.Engine", "Note.Topic.Rendering"]
+    });
+
+    expect(filterGameplayTagQueryMatches(notes, query, (note) => note.tags).map((note) => note.title)).toEqual([
+      "draft engine note",
+      "published rendering note"
+    ]);
+    expect(filterGameplayTagQueryMatches(notes, new FGameplayTagQuery(), (note) => note.tags, { emptyQueryMatches: true })).toEqual(notes);
+    let emptyQueryIterations = 0;
+    const iterable = function* () {
+      emptyQueryIterations += 1;
+      yield notes[0]!;
+    };
+
+    expect(filterGameplayTagQueryMatches(iterable(), new FGameplayTagQuery(), (note) => note.tags)).toEqual([]);
+    expect(emptyQueryIterations).toBe(0);
+    expect(() => parseGameplayTagQuery("{}")).toThrow("Invalid gameplay tag query input.");
   });
 
   it("keeps Unreal-style aliases available", () => {

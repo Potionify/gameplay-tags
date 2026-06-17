@@ -124,6 +124,53 @@ export enum EGameplayTagQueryExprType {
   NoExprMatch = "NoExprMatch"
 }
 
+export interface GameplayTagQueryExpressionJson {
+  type: EGameplayTagQueryExprType;
+  tags: string[];
+  expressions: GameplayTagQueryExpressionJson[];
+}
+
+export interface GameplayTagQueryJson {
+  description: string;
+  tags: string[];
+  expression: GameplayTagQueryExpressionJson | null;
+}
+
+export type GameplayTagQueryExpressionInput = FGameplayTagQueryExpression | GameplayTagQueryExpressionShape;
+
+export interface GameplayTagQueryExpressionShape {
+  type?: EGameplayTagQueryExprType | string;
+  ExprType?: EGameplayTagQueryExprType | string;
+  tags?: readonly GameplayTagLike[];
+  TagSet?: readonly GameplayTagLike[];
+  expressions?: readonly GameplayTagQueryExpressionInput[];
+  ExprSet?: readonly GameplayTagQueryExpressionInput[];
+}
+
+export type GameplayTagQueryInput = FGameplayTagQuery | FGameplayTagQueryExpression | GameplayTagQueryShape | GameplayTagQueryExpressionShape | GameplayTagQueryFilterInput;
+
+export interface GameplayTagQueryShape {
+  description?: string;
+  userDescription?: string;
+  UserDescription?: string;
+  expression?: GameplayTagQueryExpressionInput | null;
+  rootExpression?: GameplayTagQueryExpressionInput | null;
+  RootExpression?: GameplayTagQueryExpressionInput | null;
+}
+
+export interface GameplayTagQueryFilterInput {
+  anyTags?: GameplayTagContainerLike;
+  allTags?: GameplayTagContainerLike;
+  noTags?: GameplayTagContainerLike;
+  exactAnyTags?: GameplayTagContainerLike;
+  exactAllTags?: GameplayTagContainerLike;
+  description?: string;
+}
+
+export interface GameplayTagQueryMatchOptions {
+  emptyQueryMatches?: boolean;
+}
+
 interface GameplayTagNode {
   tag: FGameplayTag;
   fullName: string;
@@ -675,6 +722,143 @@ function replaceExpressionTags(expression: FGameplayTagQueryExpression, replacem
   };
 
   return replace(expression);
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function normalizeQueryExprType(value: unknown): EGameplayTagQueryExprType {
+  const expressionType = String(value ?? "");
+  const values = Object.values(EGameplayTagQueryExprType);
+
+  if (!values.includes(expressionType as EGameplayTagQueryExprType) || expressionType === EGameplayTagQueryExprType.Undefined) {
+    throw new Error(`Invalid gameplay tag query expression type: ${expressionType || "missing"}.`);
+  }
+
+  return expressionType as EGameplayTagQueryExprType;
+}
+
+function arrayFromUnknown<T>(value: unknown): readonly T[] {
+  return Array.isArray(value) ? value as readonly T[] : [];
+}
+
+function isGameplayTagQueryFilterInput(value: unknown): value is GameplayTagQueryFilterInput {
+  return isObjectRecord(value) && (
+    "anyTags" in value ||
+    "allTags" in value ||
+    "noTags" in value ||
+    "exactAnyTags" in value ||
+    "exactAllTags" in value
+  );
+}
+
+function isGameplayTagQueryShape(value: unknown): value is GameplayTagQueryShape {
+  return isObjectRecord(value) && (
+    "expression" in value ||
+    "rootExpression" in value ||
+    "RootExpression" in value
+  );
+}
+
+function isGameplayTagQueryExpressionShape(value: unknown): value is GameplayTagQueryExpressionShape {
+  return isObjectRecord(value) && (
+    "type" in value ||
+    "ExprType" in value ||
+    "tags" in value ||
+    "TagSet" in value ||
+    "expressions" in value ||
+    "ExprSet" in value
+  );
+}
+
+function gameplayTagQueryExpressionToJSON(expression: FGameplayTagQueryExpression): GameplayTagQueryExpressionJson {
+  return {
+    type: expression.ExprType,
+    tags: expression.TagSet.map((tag) => tag.GetTagName()),
+    expressions: expression.ExprSet.map(gameplayTagQueryExpressionToJSON)
+  };
+}
+
+function canonicalGameplayTagNames(tags: readonly FGameplayTag[]): string[] {
+  const namesByKey = new Map<string, string>();
+
+  for (const tag of tags) {
+    namesByKey.set(tag.GetTagKey(), tag.GetTagName());
+  }
+
+  return [...namesByKey.values()].sort((left, right) => compareTagNames(
+    new FGameplayTag(left),
+    new FGameplayTag(right)
+  ));
+}
+
+function comparableGameplayTagQueryExpression(expression: FGameplayTagQueryExpression): GameplayTagQueryExpressionJson {
+  const expressions = expression.UsesExprSet()
+    ? expression.ExprSet
+      .map(comparableGameplayTagQueryExpression)
+      .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)))
+    : [];
+
+  return {
+    type: expression.ExprType,
+    tags: expression.UsesTagSet() ? canonicalGameplayTagNames(expression.TagSet) : [],
+    expressions
+  };
+}
+
+function gameplayTagQueryExpressionFromInput(input: GameplayTagQueryExpressionInput | unknown): FGameplayTagQueryExpression {
+  if (input instanceof FGameplayTagQueryExpression) {
+    return cloneExpression(input);
+  }
+
+  if (!isGameplayTagQueryExpressionShape(input)) {
+    throw new Error("Invalid gameplay tag query expression input.");
+  }
+
+  const expression = new FGameplayTagQueryExpression();
+  expression.ExprType = normalizeQueryExprType(input.type ?? input.ExprType);
+  expression.TagSet = arrayFromUnknown<GameplayTagLike>(input.tags ?? input.TagSet).map(ensureTag);
+  expression.ExprSet = arrayFromUnknown<GameplayTagQueryExpressionInput>(input.expressions ?? input.ExprSet).map(gameplayTagQueryExpressionFromInput);
+  return expression;
+}
+
+function queryExpressionForTags(type: EGameplayTagQueryExprType, tags: GameplayTagContainerLike | undefined): FGameplayTagQueryExpression | undefined {
+  if (!tags) {
+    return undefined;
+  }
+
+  const container = ensureContainer(tags);
+
+  if (container.Num() === 0) {
+    return undefined;
+  }
+
+  const expression = new FGameplayTagQueryExpression();
+  expression.ExprType = type;
+  expression.AddTags(container);
+  return expression;
+}
+
+function descriptionForQueryInput(input: GameplayTagQueryShape | GameplayTagQueryFilterInput, fallback = ""): string {
+  return String(
+    input.description ??
+    ("userDescription" in input ? input.userDescription : undefined) ??
+    ("UserDescription" in input ? input.UserDescription : undefined) ??
+    fallback
+  );
+}
+
+function makeGameplayTagQueryFromShape(input: GameplayTagQueryShape): FGameplayTagQuery {
+  const query = new FGameplayTagQuery();
+  const expressionInput = input.expression ?? input.rootExpression ?? input.RootExpression;
+
+  if (!expressionInput) {
+    return query;
+  }
+
+  query.Build(gameplayTagQueryExpressionFromInput(expressionInput), descriptionForQueryInput(input));
+  return query;
 }
 
 export function parseGameplayTagDictionary(source: string, format: GameplayTagDictionaryFormat = "json"): GameplayTagDictionaryExport {
@@ -1536,6 +1720,14 @@ export class FGameplayTagContainer implements Iterable<FGameplayTag> {
 }
 
 export class FGameplayTagQueryExpression {
+  static fromJSON(input: GameplayTagQueryExpressionInput): FGameplayTagQueryExpression {
+    return FGameplayTagQueryExpression.FromJSON(input);
+  }
+
+  static FromJSON(input: GameplayTagQueryExpressionInput): FGameplayTagQueryExpression {
+    return gameplayTagQueryExpressionFromInput(input);
+  }
+
   ExprType = EGameplayTagQueryExprType.Undefined;
   ExprSet: FGameplayTagQueryExpression[] = [];
   TagSet: FGameplayTag[] = [];
@@ -1664,6 +1856,28 @@ export class FGameplayTagQueryExpression {
       EGameplayTagQueryExprType.NoExprMatch
     ].includes(this.ExprType);
   }
+
+  clone(): FGameplayTagQueryExpression {
+    return this.Clone();
+  }
+
+  Clone(): FGameplayTagQueryExpression {
+    return cloneExpression(this);
+  }
+
+  equals(Other: GameplayTagQueryExpressionInput): boolean {
+    return this.Equals(Other);
+  }
+
+  Equals(Other: GameplayTagQueryExpressionInput): boolean {
+    return JSON.stringify(comparableGameplayTagQueryExpression(this)) === JSON.stringify(
+      comparableGameplayTagQueryExpression(gameplayTagQueryExpressionFromInput(Other))
+    );
+  }
+
+  toJSON(): GameplayTagQueryExpressionJson {
+    return gameplayTagQueryExpressionToJSON(this);
+  }
 }
 
 export class FGameplayTagQuery {
@@ -1728,6 +1942,48 @@ export class FGameplayTagQuery {
     return FGameplayTagQuery.BuildQuery(new FGameplayTagQueryExpression().AllTagsMatch().AddTag(InTag));
   }
 
+  static makeQueryFromFilters(Filters: GameplayTagQueryFilterInput): FGameplayTagQuery {
+    return FGameplayTagQuery.MakeQuery_FromFilters(Filters);
+  }
+
+  static MakeQuery_FromFilters(Filters: GameplayTagQueryFilterInput): FGameplayTagQuery {
+    const expressions = [
+      queryExpressionForTags(EGameplayTagQueryExprType.AnyTagsMatch, Filters.anyTags),
+      queryExpressionForTags(EGameplayTagQueryExprType.AllTagsMatch, Filters.allTags),
+      queryExpressionForTags(EGameplayTagQueryExprType.NoTagsMatch, Filters.noTags),
+      queryExpressionForTags(EGameplayTagQueryExprType.AnyTagsExactMatch, Filters.exactAnyTags),
+      queryExpressionForTags(EGameplayTagQueryExprType.AllTagsExactMatch, Filters.exactAllTags)
+    ].filter((expression): expression is FGameplayTagQueryExpression => Boolean(expression));
+
+    if (expressions.length === 0) {
+      return new FGameplayTagQuery();
+    }
+
+    if (expressions.length === 1) {
+      const expression = expressions[0];
+
+      if (expression) {
+        return FGameplayTagQuery.BuildQuery(expression, Filters.description ?? "");
+      }
+    }
+
+    const root = new FGameplayTagQueryExpression().AllExprMatch();
+
+    for (const expression of expressions) {
+      root.AddExpr(expression);
+    }
+
+    return FGameplayTagQuery.BuildQuery(root, Filters.description ?? "");
+  }
+
+  static fromJSON(input: GameplayTagQueryInput): FGameplayTagQuery {
+    return FGameplayTagQuery.FromJSON(input);
+  }
+
+  static FromJSON(input: GameplayTagQueryInput): FGameplayTagQuery {
+    return makeGameplayTagQuery(input);
+  }
+
   private RootExpression: FGameplayTagQueryExpression | undefined;
   private TagDictionary: FGameplayTag[] = [];
   private UserDescription = "";
@@ -1761,6 +2017,34 @@ export class FGameplayTagQuery {
     }
 
     this.ReplaceTagsFast(new FGameplayTagContainer(Tag));
+  }
+
+  clone(): FGameplayTagQuery {
+    return this.Clone();
+  }
+
+  Clone(): FGameplayTagQuery {
+    const query = new FGameplayTagQuery();
+
+    if (this.RootExpression) {
+      query.Build(this.RootExpression, this.UserDescription);
+    }
+
+    return query;
+  }
+
+  equals(Other: GameplayTagQueryInput): boolean {
+    return this.Equals(Other);
+  }
+
+  Equals(Other: GameplayTagQueryInput): boolean {
+    const query = makeGameplayTagQuery(Other);
+
+    if (!this.RootExpression || !query.RootExpression) {
+      return !this.RootExpression && !query.RootExpression;
+    }
+
+    return this.RootExpression.Equals(query.RootExpression);
   }
 
   matches(Tags: FGameplayTagContainer): boolean {
@@ -1847,11 +2131,11 @@ export class FGameplayTagQuery {
     return [...this.TagDictionary];
   }
 
-  toJSON(): unknown {
+  toJSON(): GameplayTagQueryJson {
     return {
       description: this.GetDescription(),
       tags: this.TagDictionary.map((tag) => tag.GetTagName()),
-      expression: this.RootExpression ? this.ExpressionToJSON(this.RootExpression) : null
+      expression: this.RootExpression ? gameplayTagQueryExpressionToJSON(this.RootExpression) : null
     };
   }
 
@@ -1890,14 +2174,6 @@ export class FGameplayTagQuery {
     }
 
     return EGameplayTagQueryExprType.Undefined;
-  }
-
-  private ExpressionToJSON(expression: FGameplayTagQueryExpression): unknown {
-    return {
-      type: expression.ExprType,
-      tags: expression.TagSet.map((tag) => tag.GetTagName()),
-      expressions: expression.ExprSet.map((expr) => this.ExpressionToJSON(expr))
-    };
   }
 }
 
@@ -3027,6 +3303,97 @@ export function ValidateGameplayTagDictionary(input: GameplayTagDictionaryInput)
 
 export function validateGameplayTagDictionary(input: GameplayTagDictionaryInput): GameplayTagDictionaryValidationResult {
   return ValidateGameplayTagDictionary(input);
+}
+
+export function MakeGameplayTagQuery(input: GameplayTagQueryInput): FGameplayTagQuery {
+  if (input instanceof FGameplayTagQuery) {
+    return input.Clone();
+  }
+
+  if (input instanceof FGameplayTagQueryExpression) {
+    return FGameplayTagQuery.BuildQuery(input);
+  }
+
+  if (isGameplayTagQueryFilterInput(input)) {
+    return FGameplayTagQuery.MakeQuery_FromFilters(input);
+  }
+
+  if (isGameplayTagQueryShape(input)) {
+    return makeGameplayTagQueryFromShape(input);
+  }
+
+  if (isGameplayTagQueryExpressionShape(input)) {
+    return FGameplayTagQuery.BuildQuery(gameplayTagQueryExpressionFromInput(input));
+  }
+
+  throw new Error("Invalid gameplay tag query input.");
+}
+
+export function makeGameplayTagQuery(input: GameplayTagQueryInput): FGameplayTagQuery {
+  return MakeGameplayTagQuery(input);
+}
+
+export function MakeGameplayTagQueryFromFilters(filters: GameplayTagQueryFilterInput): FGameplayTagQuery {
+  return FGameplayTagQuery.MakeQuery_FromFilters(filters);
+}
+
+export function makeGameplayTagQueryFromFilters(filters: GameplayTagQueryFilterInput): FGameplayTagQuery {
+  return MakeGameplayTagQueryFromFilters(filters);
+}
+
+export function ParseGameplayTagQuery(source: string): FGameplayTagQuery {
+  return FGameplayTagQuery.FromJSON(JSON.parse(source) as GameplayTagQueryInput);
+}
+
+export function parseGameplayTagQuery(source: string): FGameplayTagQuery {
+  return ParseGameplayTagQuery(source);
+}
+
+export function StringifyGameplayTagQuery(query: GameplayTagQueryInput): string {
+  return JSON.stringify(MakeGameplayTagQuery(query), null, 2);
+}
+
+export function stringifyGameplayTagQuery(query: GameplayTagQueryInput): string {
+  return StringifyGameplayTagQuery(query);
+}
+
+export function DoesGameplayTagContainerMatchQuery(TagContainer: GameplayTagContainerLike, TagQuery: GameplayTagQueryInput, options: GameplayTagQueryMatchOptions = {}): boolean {
+  const query = MakeGameplayTagQuery(TagQuery);
+
+  if (query.IsEmpty()) {
+    return Boolean(options.emptyQueryMatches);
+  }
+
+  return ensureContainer(TagContainer).MatchesQuery(query);
+}
+
+export function doesGameplayTagContainerMatchQuery(TagContainer: GameplayTagContainerLike, TagQuery: GameplayTagQueryInput, options: GameplayTagQueryMatchOptions = {}): boolean {
+  return DoesGameplayTagContainerMatchQuery(TagContainer, TagQuery, options);
+}
+
+export function FilterGameplayTagQueryMatches<T>(
+  Items: Iterable<T>,
+  TagQuery: GameplayTagQueryInput,
+  GetTags: (item: T) => GameplayTagContainerLike,
+  options: GameplayTagQueryMatchOptions = {}
+): T[] {
+  const query = MakeGameplayTagQuery(TagQuery);
+
+  if (query.IsEmpty()) {
+    return options.emptyQueryMatches ? [...Items] : [];
+  }
+
+  const items = [...Items];
+  return items.filter((item) => ensureContainer(GetTags(item)).MatchesQuery(query));
+}
+
+export function filterGameplayTagQueryMatches<T>(
+  items: Iterable<T>,
+  tagQuery: GameplayTagQueryInput,
+  getTags: (item: T) => GameplayTagContainerLike,
+  options: GameplayTagQueryMatchOptions = {}
+): T[] {
+  return FilterGameplayTagQueryMatches(items, tagQuery, getTags, options);
 }
 
 export {

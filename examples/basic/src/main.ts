@@ -19,15 +19,18 @@ import { createIcons } from "lucide";
 import {
   EGameplayTagSourceType,
   FGameplayTagQuery,
-  FGameplayTagQueryExpression,
+  filterGameplayTagQueryMatches,
   GameplayTagDictionaryDiagnostic,
   GameplayTagDictionaryFormat,
   GameplayTagsManager,
   importGameplayTagDictionary,
   makeGameplayTagContainer,
+  makeGameplayTagQueryFromFilters,
   parseGameplayTagDictionary,
+  parseGameplayTagQuery,
   requestGameplayTag,
   stringifyGameplayTagDictionary,
+  stringifyGameplayTagQuery,
   validateGameplayTagDictionary
 } from "@potionify/gameplay-tags";
 import "./styles.css";
@@ -54,6 +57,12 @@ const seedDictionary = {
 };
 
 const manager = GameplayTagsManager.get();
+
+const sampleNotes = [
+  { title: "Draft engine note", tags: ["Note.Status.Draft", "Note.Topic.Engine", "Note.Type.Task"] },
+  { title: "Published rendering note", tags: ["Note.Status.Published", "Note.Topic.Rendering", "Note.Type.Journal"] },
+  { title: "Character state note", tags: ["Character.State.Stunned", "Note.Topic.Engine"] }
+];
 
 const state = {
   owned: new Set(["Note.Status.Draft", "Note.Topic.Engine", "Note.Type.Task"]),
@@ -378,11 +387,13 @@ function renderQuery(): string {
   const anyRequired = FGameplayTagQuery.makeQueryMatchAnyTags(required);
   const exactRequired = FGameplayTagQuery.makeQueryExactMatchAnyTags(required);
   const noBlocked = FGameplayTagQuery.makeQueryMatchNoTags(blocked);
-  const expression = new FGameplayTagQueryExpression()
-    .allExprMatch()
-    .addExpr(new FGameplayTagQueryExpression().anyTagsMatch().addTags(required))
-    .addExpr(new FGameplayTagQueryExpression().noTagsMatch().addTags(blocked));
-  const combined = FGameplayTagQuery.buildQuery(expression);
+  const combined = makeGameplayTagQueryFromFilters({
+    anyTags: required,
+    noTags: blocked,
+    description: `${state.required} and not ${state.blocked}`
+  });
+  const parsed = parseGameplayTagQuery(stringifyGameplayTagQuery(combined));
+  const matchingNotes = filterGameplayTagQueryMatches(sampleNotes, parsed, (note) => note.tags);
 
   return `
     <section class="panel">
@@ -411,8 +422,11 @@ function renderQuery(): string {
         ${metric("matchAnyTags", anyRequired.matches(container))}
         ${metric("exactMatchAnyTags", exactRequired.matches(container))}
         ${metric("matchNoTags", noBlocked.matches(container))}
-        ${metric("expression", combined.matches(container))}
+        ${metric("fromFilters", combined.matches(container))}
+        ${metric("roundTrip", parsed.equals(combined))}
+        ${metric("sampleMatches", matchingNotes.length)}
       </div>
+      <div class="pill-list compact">${matchingNotes.map((note) => pill(note.title, "strong")).join("") || pill("no notes")}</div>
     </section>
   `;
 }

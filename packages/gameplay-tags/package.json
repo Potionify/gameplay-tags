@@ -1,6 +1,6 @@
 {
   "name": "@potionify/gameplay-tags",
-  "version": "0.1.0-alpha.3",
+  "version": "0.1.0-alpha.4",
   "description": "Unreal Engine-style gameplay tags for TypeScript and JavaScript applications.",
   "license": "MIT",
   "author": "Potionify",
