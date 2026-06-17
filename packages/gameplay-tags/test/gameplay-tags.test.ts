@@ -326,6 +326,38 @@ describe("gameplay tags", () => {
     ]);
   });
 
+  it("validates redirect source names and avoids redundant target diagnostics", () => {
+    const validation = validateGameplayTagDictionary({
+      gameplayTagRedirects: [
+        { OldTagName: ".Bad,Old.", NewTagName: "Note.Status.Draft" },
+        { OldTagName: "Note.ValidOld", NewTagName: ".Bad,Target." }
+      ]
+    });
+
+    expect(validation.isValid).toBe(false);
+    expect(validation.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
+      "redirect-source-invalid",
+      "redirect-target-invalid"
+    ]);
+  });
+
+  it("distinguishes long redirect chains from redirect cycles", () => {
+    const redirects = Array.from({ length: 34 }, (_, index) => ({
+      OldTagName: `Note.Redirect.${index}`,
+      NewTagName: `Note.Redirect.${index + 1}`
+    }));
+    const validation = validateGameplayTagDictionary({
+      gameplayTagList: [
+        { Tag: "Note.Redirect.34" }
+      ],
+      gameplayTagRedirects: redirects
+    });
+
+    expect(validation.isValid).toBe(false);
+    expect(validation.diagnostics.some((diagnostic) => diagnostic.code === "redirect-chain-too-deep")).toBe(true);
+    expect(validation.diagnostics.some((diagnostic) => diagnostic.message.includes("cycle"))).toBe(false);
+  });
+
   it("replaces query dictionary tags without changing query shape", () => {
     const draft = FGameplayTagQuery.makeQueryMatchTag(requestGameplayTag("Note.Status.Draft"));
     const published = makeGameplayTagContainer(["Note.Status.Published"]);

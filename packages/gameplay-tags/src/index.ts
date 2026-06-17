@@ -199,27 +199,30 @@ function normalizeRedirect(redirect: FGameplayTagRedirect): FGameplayTagRedirect
   };
 }
 
-function resolveRedirectTargetName(TagName: string, redirects: ReadonlyMap<string, string>): { target: string; hasCycle: boolean } {
+type RedirectResolutionIssue = "cycle" | "max-depth";
+
+function resolveRedirectTargetName(TagName: string, redirects: ReadonlyMap<string, string>): { target: string; issue?: RedirectResolutionIssue } {
   let current = normalizeTagName(TagName);
   const visited = new Set<string>();
 
   for (let depth = 0; depth < 32; depth += 1) {
     const key = keyForTagName(current);
+
+    if (visited.has(key)) {
+      return { target: current, issue: "cycle" };
+    }
+
     const next = redirects.get(key);
 
     if (!next) {
-      return { target: current, hasCycle: false };
-    }
-
-    if (visited.has(key)) {
-      return { target: current, hasCycle: true };
+      return { target: current };
     }
 
     visited.add(key);
     current = next;
   }
 
-  return { target: current, hasCycle: true };
+  return { target: current, issue: "max-depth" };
 }
 
 function normalizeDictionaryEntry(entry: GameplayTagDictionaryEntry): FGameplayTagTableRow | FRestrictedGameplayTagTableRow {
@@ -2046,7 +2049,12 @@ export class UGameplayTagsManager {
       const newTagName = normalizeTagName(redirect.NewTagName);
 
       if (oldTagName && newTagName) {
-        redirectTargets.set(keyForTagName(oldTagName), newTagName);
+        const oldValidation = this.ValidateGameplayTagString(oldTagName);
+        const newValidation = this.ValidateGameplayTagString(newTagName);
+
+        if (oldValidation.isValid && newValidation.isValid) {
+          redirectTargets.set(keyForTagName(oldValidation.fixedString), newValidation.fixedString);
+        }
       }
     }
 
@@ -2107,7 +2115,12 @@ export class UGameplayTagsManager {
         return;
       }
 
-      if (keyForTagName(oldTagName) === keyForTagName(newTagName)) {
+      const oldValidation = this.ValidateGameplayTagString(oldTagName);
+      const newValidation = this.ValidateGameplayTagString(newTagName);
+      const oldTagKey = keyForTagName(oldValidation.fixedString || oldTagName);
+      const newTagKey = keyForTagName(newValidation.fixedString || newTagName);
+
+      if (oldTagKey === newTagKey) {
         diagnostics.push({
           level: "error",
           code: "redirect-loop",
@@ -2117,8 +2130,15 @@ export class UGameplayTagsManager {
         });
       }
 
-      const newValidation = this.ValidateGameplayTagString(newTagName);
-      const resolvedTarget = resolveRedirectTargetName(newTagName, redirectTargets);
+      if (!oldValidation.isValid) {
+        diagnostics.push({
+          level: "error",
+          code: "redirect-source-invalid",
+          message: oldValidation.error,
+          tag: oldTagName,
+          index
+        });
+      }
 
       if (!newValidation.isValid) {
         diagnostics.push({
@@ -2130,7 +2150,9 @@ export class UGameplayTagsManager {
         });
       }
 
-      if (keyForTagName(oldTagName) !== keyForTagName(newTagName) && resolvedTarget.hasCycle) {
+      const resolvedTarget = resolveRedirectTargetName(newValidation.fixedString || newTagName, redirectTargets);
+
+      if (oldTagKey !== newTagKey && resolvedTarget.issue === "cycle") {
         diagnostics.push({
           level: "error",
           code: "redirect-loop",
@@ -2140,7 +2162,17 @@ export class UGameplayTagsManager {
         });
       }
 
-      if (!resolvedTarget.hasCycle && !availableTags.has(keyForTagName(resolvedTarget.target))) {
+      if (oldTagKey !== newTagKey && resolvedTarget.issue === "max-depth") {
+        diagnostics.push({
+          level: "error",
+          code: "redirect-chain-too-deep",
+          message: "Redirect chain exceeds the maximum depth.",
+          tag: oldTagName,
+          index
+        });
+      }
+
+      if (newValidation.isValid && !resolvedTarget.issue && !availableTags.has(keyForTagName(resolvedTarget.target))) {
         diagnostics.push({
           level: "warning",
           code: "redirect-target-missing",
