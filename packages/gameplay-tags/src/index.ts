@@ -188,7 +188,7 @@ function normalizeTableRow(row: FGameplayTagTableRow): FGameplayTagTableRow {
 function normalizeRestrictedTableRow(row: FRestrictedGameplayTagTableRow): FRestrictedGameplayTagTableRow {
   return {
     ...normalizeTableRow(row),
-    bAllowNonRestrictedChildren: Boolean(row.bAllowNonRestrictedChildren)
+    bAllowNonRestrictedChildren: parseBoolean(row.bAllowNonRestrictedChildren)
   };
 }
 
@@ -205,10 +205,10 @@ function normalizeDictionaryEntry(entry: GameplayTagDictionaryEntry): FGameplayT
     DevComment: entry.devComment ? String(entry.devComment) : ""
   };
 
-  if (entry.isRestricted) {
+  if (parseBoolean(entry.isRestricted)) {
     return {
       ...row,
-      bAllowNonRestrictedChildren: Boolean(entry.allowNonRestrictedChildren)
+      bAllowNonRestrictedChildren: parseBoolean(entry.allowNonRestrictedChildren)
     };
   }
 
@@ -1954,7 +1954,7 @@ export class UGameplayTagsManager {
         true,
         row.DevComment ?? "",
         true,
-        Boolean(row.bAllowNonRestrictedChildren),
+        parseBoolean(row.bAllowNonRestrictedChildren),
         restrictedSourceName,
         EGameplayTagSourceType.RestrictedTagList
       ));

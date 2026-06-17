@@ -61,6 +61,7 @@ jobs:
             case "$1" in
               "@potionify/gameplay-tags") echo "packages/gameplay-tags" ;;
               gameplay-tags) echo "packages/redirect" ;;
+              *) echo "Unsupported workspace: $1" >&2; return 1 ;;
             esac
           }
 

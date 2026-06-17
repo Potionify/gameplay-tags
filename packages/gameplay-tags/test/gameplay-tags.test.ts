@@ -177,6 +177,50 @@ describe("gameplay tags", () => {
     ]);
   });
 
+  it("coerces string boolean dictionary flags", () => {
+    const manager = GameplayTagsManager.get();
+    const result = importGameplayTagDictionary({
+      restrictedGameplayTagList: [
+        {
+          Tag: "Note.Flags.RestrictedFalse",
+          DevComment: "String false should stay false",
+          bAllowNonRestrictedChildren: "false" as unknown as boolean
+        }
+      ],
+      entries: [
+        {
+          tag: "Note.Flags.EntryPlain",
+          devComment: "String false should not mark the entry restricted",
+          isRestricted: "false" as unknown as boolean,
+          allowNonRestrictedChildren: "true" as unknown as boolean
+        },
+        {
+          tag: "Note.Flags.EntryRestricted",
+          devComment: "String true should mark the entry restricted",
+          isRestricted: "true" as unknown as boolean,
+          allowNonRestrictedChildren: "false" as unknown as boolean
+        }
+      ]
+    }, {
+      sourceName: "Notes",
+      sourceType: EGameplayTagSourceType.TagList
+    });
+
+    expect(result.diagnostics).toEqual([]);
+    expect(manager.getTagEditorData("Note.Flags.RestrictedFalse")).toMatchObject({
+      isRestrictedTag: true,
+      allowNonRestrictedChildren: false
+    });
+    expect(manager.getTagEditorData("Note.Flags.EntryPlain")).toMatchObject({
+      isRestrictedTag: false,
+      allowNonRestrictedChildren: false
+    });
+    expect(manager.getTagEditorData("Note.Flags.EntryRestricted")).toMatchObject({
+      isRestrictedTag: true,
+      allowNonRestrictedChildren: false
+    });
+  });
+
   it("validates dictionary input before import", () => {
     const validation = validateGameplayTagDictionary({
       gameplayTagList: [
