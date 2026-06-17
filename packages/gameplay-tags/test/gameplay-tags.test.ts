@@ -12,9 +12,11 @@ import {
   importGameplayTagDictionary,
   makeGameplayTagContainer,
   parseGameplayTagDictionary,
+  parseGameplayTagDictionaryIni,
   redirectGameplayTagName,
   requestGameplayTagContainer,
   stringifyGameplayTagDictionary,
+  stringifyGameplayTagDictionaryIni,
   validateGameplayTagString,
   validateGameplayTagDictionary,
   requestGameplayTag
@@ -395,5 +397,39 @@ describe("gameplay tags", () => {
     ]);
     expect(serialized).toContain("\"CSV, imported\"");
     expect(serialized).toContain("Note.Source.Old,Note.Source.Csv");
+  });
+
+  it("round-trips dictionary data as ini", () => {
+    const ini = [
+      "; DefaultGameplayTags.ini style import",
+      "[/Script/GameplayTags.GameplayTagsSettings]",
+      "+GameplayTagList=(Tag=\"Note.Source.Ini\",DevComment=\"INI, imported with \\\"quotes\\\"\") ; trailing comment",
+      "+GameplayTagList=(Tag=\"Note.Source.Literal\",DevComment=\"Literal \\\\n token\")",
+      "+RestrictedGameplayTagList=(Tag=\"Note.Source.Restricted\",DevComment=\"Locked\",bAllowNonRestrictedChildren=True)",
+      "+GameplayTagRedirects=(OldTagName=\"Note.Source.Old\",NewTagName=\"Note.Source.Ini\")",
+      "[/Script/Other.Section]",
+      "+GameplayTagList=(Tag=\"Ignored.Section\",DevComment=\"Ignored\")"
+    ].join("\n");
+    const parsed = parseGameplayTagDictionary(ini, "ini");
+    const serialized = stringifyGameplayTagDictionary(parsed, "ini");
+
+    expect(parsed).toEqual(parseGameplayTagDictionaryIni(ini));
+    expect(stringifyGameplayTagDictionaryIni(parsed)).toBe(serialized);
+    expect(parsed.gameplayTagList).toEqual([
+      { Tag: "Note.Source.Ini", DevComment: "INI, imported with \"quotes\"" },
+      { Tag: "Note.Source.Literal", DevComment: "Literal \\n token" }
+    ]);
+    expect(parsed.restrictedGameplayTagList).toEqual([
+      { Tag: "Note.Source.Restricted", DevComment: "Locked", bAllowNonRestrictedChildren: true }
+    ]);
+    expect(parsed.gameplayTagRedirects).toEqual([
+      { OldTagName: "Note.Source.Old", NewTagName: "Note.Source.Ini" }
+    ]);
+    expect(serialized).toContain("[/Script/GameplayTags.GameplayTagsSettings]");
+    expect(serialized).toContain("+GameplayTagList=(Tag=\"Note.Source.Ini\",DevComment=\"INI, imported with \\\"quotes\\\"\")");
+    expect(serialized).toContain("+GameplayTagList=(Tag=\"Note.Source.Literal\",DevComment=\"Literal \\\\n token\")");
+    expect(serialized).toContain("+RestrictedGameplayTagList=(Tag=\"Note.Source.Restricted\",DevComment=\"Locked\",bAllowNonRestrictedChildren=True)");
+    expect(serialized).toContain("+GameplayTagRedirects=(OldTagName=\"Note.Source.Old\",NewTagName=\"Note.Source.Ini\")");
+    expect(serialized).not.toContain("Ignored.Section");
   });
 });

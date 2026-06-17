@@ -1,6 +1,6 @@
 {
   "name": "gameplay-tags",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.3",
   "description": "Alias package for @potionify/gameplay-tags. Use the scoped package directly.",
   "license": "MIT",
   "author": "Potionify",
@@ -26,7 +26,7 @@
   ],
   "sideEffects": false,
   "dependencies": {
-    "@potionify/gameplay-tags": "0.1.0-alpha.2"
+    "@potionify/gameplay-tags": "0.1.0-alpha.3"
   },
   "publishConfig": {
     "access": "public"

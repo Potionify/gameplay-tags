@@ -47,6 +47,7 @@ Dictionary helpers are included for tools that need to read and write gameplay t
 import {
   GameplayTagsManager,
   importGameplayTagDictionary,
+  parseGameplayTagDictionary,
   stringifyGameplayTagDictionary
 } from "@potionify/gameplay-tags";
 
@@ -61,4 +62,13 @@ const csv = stringifyGameplayTagDictionary(
   GameplayTagsManager.get().exportGameplayTagDictionary(),
   "csv"
 );
+
+const ini = stringifyGameplayTagDictionary(
+  GameplayTagsManager.get().exportGameplayTagDictionary(),
+  "ini"
+);
+
+const parsed = parseGameplayTagDictionary(ini, "ini");
 ```
+
+Supported dictionary string formats are JSON, CSV, and Unreal `DefaultGameplayTags.ini`-style config rows.
