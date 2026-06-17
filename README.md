@@ -46,13 +46,14 @@ owned.hasTagExact(requestGameplayTag("Note.Status"));
 
 ## Dictionary Tools
 
-The manager can import and export Unreal-style table rows, restricted table rows, and redirects. The same helpers support JSON and CSV strings for note apps that want portable tag dictionaries.
+The manager can import and export Unreal-style table rows, restricted table rows, and redirects. The same package helpers support JSON, CSV, and Unreal `DefaultGameplayTags.ini`-style strings for note apps that want portable tag dictionaries.
 
 ```ts
 import {
   EGameplayTagSourceType,
   GameplayTagsManager,
   importGameplayTagDictionary,
+  parseGameplayTagDictionary,
   stringifyGameplayTagDictionary
 } from "@potionify/gameplay-tags";
 
@@ -75,6 +76,13 @@ const json = stringifyGameplayTagDictionary(
   GameplayTagsManager.get().exportGameplayTagDictionary(),
   "json"
 );
+
+const ini = stringifyGameplayTagDictionary(
+  GameplayTagsManager.get().exportGameplayTagDictionary(),
+  "ini"
+);
+
+const parsed = parseGameplayTagDictionary(ini, "ini");
 ```
 
 Import results include diagnostics so applications can show duplicate tags, invalid tag strings, and redirects that point at missing tags before applying a dictionary.

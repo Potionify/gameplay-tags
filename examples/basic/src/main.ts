@@ -2,6 +2,7 @@ import {
   ClipboardCheck,
   Database,
   FileJson,
+  FileText,
   GitBranch,
   ListChecks,
   RotateCcw,
@@ -141,6 +142,18 @@ function ensureSelections(): void {
 
 function ownedContainer() {
   return makeGameplayTagContainer([...state.owned]);
+}
+
+function sourceTypeForFormat(format: GameplayTagDictionaryFormat): EGameplayTagSourceType {
+  if (format === "csv") {
+    return EGameplayTagSourceType.DataTable;
+  }
+
+  if (format === "ini") {
+    return EGameplayTagSourceType.DefaultTagList;
+  }
+
+  return EGameplayTagSourceType.TagList;
 }
 
 function toggleOwned(tag: string): void {
@@ -477,10 +490,12 @@ function renderImportExport(): string {
           <select data-field="dictionaryFormat">
             <option value="json" ${state.dictionaryFormat === "json" ? "selected" : ""}>JSON</option>
             <option value="csv" ${state.dictionaryFormat === "csv" ? "selected" : ""}>CSV</option>
+            <option value="ini" ${state.dictionaryFormat === "ini" ? "selected" : ""}>INI</option>
           </select>
         </label>
         <button data-action="export-json" title="Export JSON"><i data-lucide="file-json"></i><span>JSON</span></button>
         <button data-action="export-csv" title="Export CSV"><i data-lucide="table-properties"></i><span>CSV</span></button>
+        <button data-action="export-ini" title="Export INI"><i data-lucide="file-text"></i><span>INI</span></button>
         <button data-action="validate" title="Validate dictionary"><i data-lucide="clipboard-check"></i><span>Validate</span></button>
         <button data-action="import" title="Import dictionary"><i data-lucide="upload"></i><span>Import</span></button>
         <button data-action="reset" title="Reset dictionary"><i data-lucide="rotate-ccw"></i><span>Reset</span></button>
@@ -536,7 +551,7 @@ function importDictionary(): void {
     manager.reset();
     const result = importGameplayTagDictionary(parsed, {
       sourceName: "ImportedNotes",
-      sourceType: state.dictionaryFormat === "csv" ? EGameplayTagSourceType.DataTable : EGameplayTagSourceType.TagList
+      sourceType: sourceTypeForFormat(state.dictionaryFormat)
     });
     state.diagnostics = result.diagnostics;
     state.importSummary = `Imported ${result.importedTags.num()} tags: ${diagnosticSummary()}`;
@@ -561,6 +576,9 @@ function handleAction(action: string): void {
       break;
     case "export-csv":
       exportDictionary("csv");
+      break;
+    case "export-ini":
+      exportDictionary("ini");
       break;
     case "validate":
       validateDictionaryText();
@@ -627,6 +645,7 @@ function render(): void {
       ClipboardCheck,
       Database,
       FileJson,
+      FileText,
       GitBranch,
       ListChecks,
       RotateCcw,

@@ -110,7 +110,7 @@ export interface GameplayTagDictionaryShape {
 }
 
 export type GameplayTagDictionaryInput = readonly FGameplayTagTableRow[] | GameplayTagDictionaryShape;
-export type GameplayTagDictionaryFormat = "json" | "csv";
+export type GameplayTagDictionaryFormat = "json" | "csv" | "ini";
 
 export enum EGameplayTagQueryExprType {
   Undefined = "Undefined",
@@ -143,6 +143,7 @@ const DEFAULT_INVALID_TAG_CHARACTERS = "\"',\r\n\t";
 
 const DEFAULT_SOURCE_NAME = "Default";
 const DEFAULT_RESTRICTED_SOURCE_NAME = "Restricted";
+const GAMEPLAY_TAGS_SETTINGS_SECTION = "[/Script/GameplayTags.GameplayTagsSettings]";
 
 interface NormalizedGameplayTagDictionary {
   gameplayTagList: FGameplayTagTableRow[];
@@ -308,6 +309,14 @@ function escapeCsvField(value: unknown): string {
   return `"${field.replaceAll("\"", "\"\"")}"`;
 }
 
+function escapeIniString(value: unknown): string {
+  return `"${String(value ?? "")
+    .replaceAll("\\", "\\\\")
+    .replaceAll("\"", "\\\"")
+    .replaceAll("\r", "\\r")
+    .replaceAll("\n", "\\n")}"`;
+}
+
 function parseCsvRows(source: string): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
@@ -372,6 +381,196 @@ function valueForHeader(row: Record<string, string>, ...headers: string[]): stri
   }
 
   return "";
+}
+
+function valueForIniField(row: Record<string, string>, ...fields: string[]): string {
+  for (const field of fields) {
+    const value = row[field.toLocaleLowerCase("en-US")];
+
+    if (value !== undefined) {
+      return value;
+    }
+  }
+
+  return "";
+}
+
+function updateIniEscaping(character: string, inQuotes: boolean, escaping: boolean): boolean {
+  if (!inQuotes) {
+    return false;
+  }
+
+  if (character === "\\") {
+    return !escaping;
+  }
+
+  return false;
+}
+
+function stripIniLineComment(source: string): string {
+  let inQuotes = false;
+  let escaping = false;
+
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index] ?? "";
+
+    if (character === "\"" && !escaping) {
+      inQuotes = !inQuotes;
+    }
+
+    if (!inQuotes && (character === ";" || character === "#")) {
+      return source.slice(0, index).trim();
+    }
+
+    escaping = updateIniEscaping(character, inQuotes, escaping);
+  }
+
+  return source.trim();
+}
+
+function findIniAssignmentIndex(source: string): number {
+  let inQuotes = false;
+  let escaping = false;
+
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index] ?? "";
+
+    if (character === "\"" && !escaping) {
+      inQuotes = !inQuotes;
+    }
+
+    if (character === "=" && !inQuotes) {
+      return index;
+    }
+
+    escaping = updateIniEscaping(character, inQuotes, escaping);
+  }
+
+  return -1;
+}
+
+function splitIniStructFields(source: string): string[] {
+  const fields: string[] = [];
+  let field = "";
+  let inQuotes = false;
+  let escaping = false;
+
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index] ?? "";
+
+    if (character === "\"" && !escaping) {
+      inQuotes = !inQuotes;
+      field += character;
+      escaping = false;
+      continue;
+    }
+
+    if (character === "," && !inQuotes) {
+      const trimmed = field.trim();
+
+      if (trimmed) {
+        fields.push(trimmed);
+      }
+
+      field = "";
+      escaping = false;
+      continue;
+    }
+
+    field += character;
+    escaping = updateIniEscaping(character, inQuotes, escaping);
+  }
+
+  const trimmed = field.trim();
+
+  if (trimmed) {
+    fields.push(trimmed);
+  }
+
+  return fields;
+}
+
+function parseIniValue(value: string): string {
+  const trimmed = value.trim();
+
+  if (trimmed.startsWith("\"") && trimmed.endsWith("\"")) {
+    let result = "";
+    const body = trimmed.slice(1, -1);
+
+    for (let index = 0; index < body.length; index += 1) {
+      const character = body[index] ?? "";
+      const next = body[index + 1];
+
+      if (character !== "\\" || next === undefined) {
+        result += character;
+        continue;
+      }
+
+      if (next === "r") {
+        result += "\r";
+        index += 1;
+        continue;
+      }
+
+      if (next === "n") {
+        result += "\n";
+        index += 1;
+        continue;
+      }
+
+      if (next === "\"" || next === "\\") {
+        result += next;
+        index += 1;
+        continue;
+      }
+
+      result += character;
+    }
+
+    return result;
+  }
+
+  return trimmed;
+}
+
+function parseIniStruct(source: string): Record<string, string> {
+  let body = source.trim();
+
+  if (body.startsWith("(") && body.endsWith(")")) {
+    body = body.slice(1, -1);
+  }
+
+  const result: Record<string, string> = {};
+
+  for (const field of splitIniStructFields(body)) {
+    const assignmentIndex = findIniAssignmentIndex(field);
+
+    if (assignmentIndex < 0) {
+      continue;
+    }
+
+    const key = field.slice(0, assignmentIndex).trim();
+
+    if (!key) {
+      continue;
+    }
+
+    result[key.toLocaleLowerCase("en-US")] = parseIniValue(field.slice(assignmentIndex + 1));
+  }
+
+  return result;
+}
+
+function stringifyIniValue(value: string | boolean | undefined): string {
+  if (typeof value === "boolean") {
+    return value ? "True" : "False";
+  }
+
+  return escapeIniString(value);
+}
+
+function stringifyIniStruct(fields: readonly (readonly [string, string | boolean | undefined])[]): string {
+  return `(${fields.map(([key, value]) => `${key}=${stringifyIniValue(value)}`).join(",")})`;
 }
 
 function uniqueTags(tags: Iterable<FGameplayTag>): FGameplayTag[] {
@@ -479,6 +678,10 @@ function replaceExpressionTags(expression: FGameplayTagQueryExpression, replacem
 }
 
 export function parseGameplayTagDictionary(source: string, format: GameplayTagDictionaryFormat = "json"): GameplayTagDictionaryExport {
+  if (format === "ini") {
+    return parseGameplayTagDictionaryIni(source);
+  }
+
   if (format === "csv") {
     return parseGameplayTagDictionaryCsv(source);
   }
@@ -501,6 +704,10 @@ export function stringifyGameplayTagDictionary(dictionary: GameplayTagDictionary
     return stringifyGameplayTagDictionaryCsv(normalized);
   }
 
+  if (format === "ini") {
+    return stringifyGameplayTagDictionaryIni(normalized);
+  }
+
   return JSON.stringify(
     {
       gameplayTagList: normalized.gameplayTagList,
@@ -514,6 +721,117 @@ export function stringifyGameplayTagDictionary(dictionary: GameplayTagDictionary
 
 export function StringifyGameplayTagDictionary(dictionary: GameplayTagDictionaryInput, format: GameplayTagDictionaryFormat = "json"): string {
   return stringifyGameplayTagDictionary(dictionary, format);
+}
+
+export function parseGameplayTagDictionaryIni(source: string): GameplayTagDictionaryExport {
+  const gameplayTagList: FGameplayTagTableRow[] = [];
+  const restrictedGameplayTagList: FRestrictedGameplayTagTableRow[] = [];
+  const gameplayTagRedirects: FGameplayTagRedirect[] = [];
+  let foundSection = false;
+  let inGameplayTagsSection = true;
+
+  for (const rawLine of source.split(/\r?\n/)) {
+    const line = stripIniLineComment(rawLine);
+
+    if (!line) {
+      continue;
+    }
+
+    if (line.startsWith("[") && line.endsWith("]")) {
+      foundSection = true;
+      inGameplayTagsSection = line === GAMEPLAY_TAGS_SETTINGS_SECTION;
+      continue;
+    }
+
+    if (foundSection && !inGameplayTagsSection) {
+      continue;
+    }
+
+    const assignmentIndex = findIniAssignmentIndex(line);
+
+    if (assignmentIndex < 0) {
+      continue;
+    }
+
+    const propertyName = line.slice(0, assignmentIndex).trim().replace(/^\+/, "");
+    const fields = parseIniStruct(line.slice(assignmentIndex + 1));
+
+    if (propertyName === "GameplayTagRedirects") {
+      const OldTagName = valueForIniField(fields, "OldTagName", "Old");
+      const NewTagName = valueForIniField(fields, "NewTagName", "New");
+
+      if (OldTagName || NewTagName) {
+        gameplayTagRedirects.push({ OldTagName, NewTagName });
+      }
+
+      continue;
+    }
+
+    const Tag = valueForIniField(fields, "Tag", "TagName");
+
+    if (!Tag) {
+      continue;
+    }
+
+    const DevComment = valueForIniField(fields, "DevComment", "Comment");
+
+    if (propertyName === "RestrictedGameplayTagList") {
+      restrictedGameplayTagList.push({
+        Tag,
+        DevComment,
+        bAllowNonRestrictedChildren: parseBoolean(valueForIniField(fields, "bAllowNonRestrictedChildren", "AllowNonRestrictedChildren"))
+      });
+      continue;
+    }
+
+    if (propertyName === "GameplayTagList") {
+      gameplayTagList.push({ Tag, DevComment });
+    }
+  }
+
+  return {
+    gameplayTagList,
+    restrictedGameplayTagList,
+    gameplayTagRedirects,
+    entries: []
+  };
+}
+
+export function ParseGameplayTagDictionaryIni(source: string): GameplayTagDictionaryExport {
+  return parseGameplayTagDictionaryIni(source);
+}
+
+export function stringifyGameplayTagDictionaryIni(dictionary: GameplayTagDictionaryInput): string {
+  const normalized = normalizeGameplayTagDictionaryForSerialization(dictionary);
+  const rows = [GAMEPLAY_TAGS_SETTINGS_SECTION];
+
+  for (const row of normalized.gameplayTagList) {
+    rows.push(`+GameplayTagList=${stringifyIniStruct([
+      ["Tag", row.Tag],
+      ["DevComment", row.DevComment ?? ""]
+    ])}`);
+  }
+
+  for (const row of normalized.restrictedGameplayTagList) {
+    rows.push(`+RestrictedGameplayTagList=${stringifyIniStruct([
+      ["Tag", row.Tag],
+      ["DevComment", row.DevComment ?? ""],
+      ["bAllowNonRestrictedChildren", Boolean(row.bAllowNonRestrictedChildren)]
+    ])}`);
+  }
+
+  for (const redirect of normalized.gameplayTagRedirects) {
+    rows.push(`+GameplayTagRedirects=${stringifyIniStruct([
+      ["OldTagName", redirect.OldTagName],
+      ["NewTagName", redirect.NewTagName]
+    ])}`);
+  }
+
+  return rows.join("\n");
+}
+
+export function StringifyGameplayTagDictionaryIni(dictionary: GameplayTagDictionaryInput): string {
+  return stringifyGameplayTagDictionaryIni(dictionary);
 }
 
 export function parseGameplayTagDictionaryCsv(source: string): GameplayTagDictionaryExport {
