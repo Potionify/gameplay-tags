@@ -364,6 +364,32 @@ textarea {
   padding: 0 16px 16px;
 }
 
+.diagnostics-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 42px;
+  border: 1px solid #d9e2e7;
+  border-radius: 6px;
+  padding: 9px 10px;
+  background: #f9fbfc;
+}
+
+.diagnostics-summary span {
+  color: #60717d;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.diagnostics-summary strong {
+  color: #263747;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
 .diagnostic {
   display: grid;
   gap: 4px;
@@ -399,9 +425,24 @@ textarea {
   background: #fff8df;
 }
 
+.diagnostics-summary.warning {
+  border-color: #e5d098;
+  background: #fff8df;
+}
+
 .diagnostic.ok {
   border-color: #a8d9d1;
   background: #effaf8;
+}
+
+.diagnostics-summary.ok {
+  border-color: #a8d9d1;
+  background: #effaf8;
+}
+
+.diagnostics-summary.error {
+  border-color: #efb5ad;
+  background: #fff4f2;
 }
 
 .error-line {

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  addNativeGameplayTag,
   EGameplayTagSourceType,
   BlueprintGameplayTagLibrary,
   FGameplayTag,
@@ -11,7 +12,10 @@ import {
   importGameplayTagDictionary,
   makeGameplayTagContainer,
   parseGameplayTagDictionary,
+  redirectGameplayTagName,
+  requestGameplayTagContainer,
   stringifyGameplayTagDictionary,
+  validateGameplayTagString,
   validateGameplayTagDictionary,
   requestGameplayTag
 } from "../src/index.js";
@@ -107,6 +111,22 @@ describe("gameplay tags", () => {
     expect(BlueprintGameplayTagLibrary.hasTag(owned, FGameplayTag.RequestGameplayTag("Note.Status"), true)).toBe(false);
   });
 
+  it("keeps top-level Unreal and camelCase helpers available", () => {
+    const created = addNativeGameplayTag("Note.Status.ReadyForReview");
+    const container = requestGameplayTagContainer(["Note.Status.ReadyForReview", "Note.Topic.Engine"]);
+    const validation = validateGameplayTagString(" .Note.Bad,Tag. ");
+
+    GameplayTagsManager.get().addGameplayTagRedirect({
+      OldTagName: "Note.Status.Review",
+      NewTagName: "Note.Status.ReadyForReview"
+    });
+
+    expect(created.getTagName()).toBe("Note.Status.ReadyForReview");
+    expect(container.hasTag(requestGameplayTag("Note.Status"))).toBe(true);
+    expect(validation.fixedString).toBe("Note.Bad_Tag");
+    expect(redirectGameplayTagName("Note.Status.Review")).toBe("Note.Status.ReadyForReview");
+  });
+
   it("validates tag strings", () => {
     const validation = GameplayTagsManager.get().validateGameplayTagString(" .Note.Bad,Tag. ");
 
@@ -175,6 +195,28 @@ describe("gameplay tags", () => {
     expect(exported.gameplayTagRedirects).toEqual([
       { OldTagName: "Note.Priority.Urgent", NewTagName: "Note.Priority.High" }
     ]);
+
+    const serializedExport = JSON.parse(stringifyGameplayTagDictionary(exported)) as {
+      gameplayTagList: Array<{ Tag: string }>;
+      restrictedGameplayTagList: Array<{ Tag: string }>;
+    };
+
+    expect(serializedExport.gameplayTagList.filter((row) => row.Tag === "Note.Priority.High")).toHaveLength(1);
+    expect(serializedExport.gameplayTagList.filter((row) => row.Tag === "Note.Priority.Low")).toHaveLength(1);
+    expect(serializedExport.restrictedGameplayTagList.filter((row) => row.Tag === "Note.Internal.Archived")).toHaveLength(1);
+
+    const mixedSerialized = JSON.parse(stringifyGameplayTagDictionary({
+      gameplayTagList: [{ Tag: "Note.Mixed.Row" }],
+      entries: [
+        { tag: "Note.Mixed.Row" },
+        { tag: "Note.Mixed.Entry" }
+      ]
+    })) as { gameplayTagList: Array<{ Tag: string }> };
+
+    expect(mixedSerialized.gameplayTagList.map((row) => row.Tag)).toEqual([
+      "Note.Mixed.Row",
+      "Note.Mixed.Entry"
+    ]);
   });
 
   it("coerces string boolean dictionary flags", () => {
@@ -239,9 +281,65 @@ describe("gameplay tags", () => {
       "tag-duplicate",
       "tag-invalid",
       "redirect-target-missing",
-      "redirect-loop",
-      "redirect-target-missing"
+      "redirect-loop"
     ]);
+  });
+
+  it("resolves redirect chains and validates redirect cycles", () => {
+    const manager = GameplayTagsManager.get();
+    const valid = validateGameplayTagDictionary({
+      gameplayTagList: [
+        { Tag: "Note.Status.Review" }
+      ],
+      gameplayTagRedirects: [
+        { OldTagName: "Note.Status.ReadyForReview", NewTagName: "Note.Status.PendingReview" },
+        { OldTagName: "Note.Status.PendingReview", NewTagName: "Note.Status.Review" }
+      ]
+    });
+
+    expect(valid.diagnostics).toEqual([]);
+
+    importGameplayTagDictionary({
+      gameplayTagList: [
+        { Tag: "Note.Status.Review" }
+      ],
+      gameplayTagRedirects: [
+        { OldTagName: "Note.Status.ReadyForReview", NewTagName: "Note.Status.PendingReview" },
+        { OldTagName: "Note.Status.PendingReview", NewTagName: "Note.Status.Review" }
+      ]
+    });
+
+    expect(manager.requestGameplayTag("Note.Status.ReadyForReview").getTagName()).toBe("Note.Status.Review");
+    expect(manager.redirectGameplayTagName("Note.Status.ReadyForReview")).toBe("Note.Status.Review");
+
+    const invalid = validateGameplayTagDictionary({
+      gameplayTagRedirects: [
+        { OldTagName: "Note.Cycle.A", NewTagName: "Note.Cycle.B" },
+        { OldTagName: "Note.Cycle.B", NewTagName: "Note.Cycle.A" }
+      ]
+    });
+
+    expect(invalid.isValid).toBe(false);
+    expect(invalid.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
+      "redirect-loop",
+      "redirect-loop"
+    ]);
+  });
+
+  it("replaces query dictionary tags without changing query shape", () => {
+    const draft = FGameplayTagQuery.makeQueryMatchTag(requestGameplayTag("Note.Status.Draft"));
+    const published = makeGameplayTagContainer(["Note.Status.Published"]);
+    const ownedDraft = makeGameplayTagContainer(["Note.Status.Draft"]);
+    const ownedPublished = makeGameplayTagContainer(["Note.Status.Published"]);
+
+    expect(draft.matches(ownedDraft)).toBe(true);
+    expect(draft.matches(ownedPublished)).toBe(false);
+
+    draft.replaceTagsFast(published);
+
+    expect(draft.getGameplayTagArray().map((tag) => tag.getTagName())).toEqual(["Note.Status.Published"]);
+    expect(draft.matches(ownedDraft)).toBe(false);
+    expect(draft.matches(ownedPublished)).toBe(true);
   });
 
   it("round-trips dictionary data as csv", () => {
