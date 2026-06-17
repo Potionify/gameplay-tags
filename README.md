@@ -136,6 +136,10 @@ npm run dev
 
 The Vite example lives in `examples/basic` and is configured for GitHub Pages. The Pages workflow builds the app with `/gameplay-tags/` as its base path.
 
+## Changelog
+
+Release notes live in [CHANGELOG.md](CHANGELOG.md).
+
 ## Release Strategy
 
 Use short-lived feature branches with the `codex/` prefix for implementation work, then merge through pull requests into `main`.
@@ -168,11 +172,27 @@ After publishing, run a registry smoke test:
 npm run smoke:published
 ```
 
-Move to beta when the API names and runtime behavior feel settled:
+The published smoke test installs both package names from npm and checks ESM/CJS imports, container matching, INI dictionary import/export, and query helper round-trips.
+
+## Beta Readiness
+
+Before moving from `alpha` to `beta`:
+
+- Confirm `main` is green in CI.
+- Run `npm run check`.
+- Run `GAMEPLAY_TAGS_SMOKE_VERSION=alpha npm run smoke:published`.
+- Confirm the GitHub Pages workbench loads and exercises dictionary JSON/CSV/INI plus query helper flows.
+- Review unresolved GitHub Copilot comments and either address or intentionally dismiss false positives.
+- Confirm `@potionify/gameplay-tags` and `gameplay-tags` have the same `alpha` version on npm.
+- Confirm `gameplay-tags` remains deprecated with the handoff message.
+- Update [CHANGELOG.md](CHANGELOG.md) with the beta release notes before publishing the beta version.
+
+When the checklist passes, publish a beta prerelease through the manual `Publish` workflow. Use `dist-tag=beta`, start with a dry run, then run the real publish for both packages. Keep `latest` unchanged until beta has had real usage feedback.
+
+The equivalent local versioning command is:
 
 ```sh
 npm version prerelease --preid beta --workspaces
-npm publish -w @potionify/gameplay-tags --tag beta
 ```
 
 Promote a proven version to latest:
