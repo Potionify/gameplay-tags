@@ -158,7 +158,13 @@ npm publish -w @potionify/gameplay-tags --tag alpha
 npm publish -w gameplay-tags --tag alpha
 ```
 
-The preferred publishing path is the manual GitHub Actions `Publish` workflow. It uses the repository `NPMJS_TOKEN` secret, runs `npm run check`, defaults to a dry run, skips workspace versions that already exist on npm, publishes with provenance, automatically deprecates the unscoped handoff package after real runs that include `gameplay-tags`, and requires an explicit confirmation before publishing with the `latest` dist-tag.
+The preferred publishing path is the manual GitHub Actions `Publish` workflow. It uses the repository `NPMJS_TOKEN` secret, runs `npm run check`, skips workspace versions that already exist on npm during real publish steps, publishes with provenance, automatically deprecates the unscoped handoff package only after real runs that publish `gameplay-tags`, and requires an explicit confirmation before publishing with the `latest` dist-tag.
+
+The `Publish` workflow has three publish modes:
+
+- `dry run then publish`: default release path that validates the npm package output before publishing it.
+- `dry run only`: validation path that does not publish or deprecate anything.
+- `publish only`: repair path for publishing after a separate dry run has already passed.
 
 Use the `Deprecate Unscoped Package` workflow only as a manual repair path if the deprecation message needs to be applied again:
 
@@ -187,7 +193,7 @@ Before moving from `alpha` to `beta`:
 - Confirm `gameplay-tags` remains deprecated with the handoff message.
 - Update [CHANGELOG.md](CHANGELOG.md) with the beta release notes before publishing the beta version.
 
-When the checklist passes, publish a beta prerelease through the manual `Publish` workflow. Use `dist-tag=beta`, start with a dry run, then run the real publish for both packages. Keep `latest` unchanged until beta has had real usage feedback.
+When the checklist passes, publish a beta prerelease through the manual `Publish` workflow. Use `dist-tag=beta` and `publish-mode=dry run then publish` for both packages. Keep `latest` unchanged until beta has had real usage feedback.
 
 The equivalent local versioning command is:
 

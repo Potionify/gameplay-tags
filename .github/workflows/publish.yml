@@ -21,11 +21,15 @@ on:
           - alpha
           - beta
           - latest
-      dry-run:
-        description: Run npm publish without publishing
+      publish-mode:
+        description: Publish mode
         required: true
-        type: boolean
-        default: true
+        type: choice
+        default: dry run then publish
+        options:
+          - dry run then publish
+          - dry run only
+          - publish only
       confirm-latest:
         description: Required when dist-tag is latest
         required: true
@@ -65,57 +69,123 @@ jobs:
             esac
           }
 
+          deprecation_message="Use the official package: @potionify/gameplay-tags"
+          published_unscoped=false
+          published_unscoped_version=""
+
           publish_workspace() {
             local workspace="$1"
+            local publish_kind="$2"
             local package_dir
             local package_name
             local package_version
-            local dry_run_flag=()
-            local provenance_flag=()
+            local publish_flags=()
 
             package_dir="$(workspace_dir "$workspace")"
             package_name="$(node -p "JSON.parse(require('node:fs').readFileSync('${package_dir}/package.json', 'utf8')).name")"
             package_version="$(node -p "JSON.parse(require('node:fs').readFileSync('${package_dir}/package.json', 'utf8')).version")"
 
-            if npm view "${package_name}@${package_version}" version >/dev/null 2>&1; then
-              echo "${package_name}@${package_version} is already published; skipping."
-              return
-            fi
+            case "$publish_kind" in
+              dry-run)
+                publish_flags=(--dry-run)
+                ;;
+              publish)
+                publish_flags=(--provenance)
 
-            if [[ "${{ inputs['dry-run'] }}" == "true" ]]; then
-              dry_run_flag=(--dry-run)
+                if npm view "${package_name}@${package_version}" version >/dev/null 2>&1; then
+                  echo "${package_name}@${package_version} is already published; skipping."
+                  return
+                fi
+                ;;
+              *)
+                echo "Unsupported publish kind: $publish_kind" >&2
+                return 1
+                ;;
+            esac
+
+            if [[ "$publish_kind" == "dry-run" ]]; then
+              echo "Dry-running ${package_name}@${package_version}."
             else
-              provenance_flag=(--provenance)
+              echo "Publishing ${package_name}@${package_version}."
             fi
 
             npm publish \
               --workspace "$workspace" \
               --tag "${{ inputs['dist-tag'] }}" \
-              "${provenance_flag[@]}" \
-              "${dry_run_flag[@]}"
+              "${publish_flags[@]}"
+
+            if [[ "$publish_kind" == "publish" && "$package_name" == "gameplay-tags" ]]; then
+              published_unscoped=true
+              published_unscoped_version="$package_version"
+            fi
           }
 
           deprecate_unscoped_package() {
-            if [[ "${{ inputs['dry-run'] }}" == "true" ]]; then
-              echo "Skipping gameplay-tags deprecation during dry run."
+            local current_deprecation
+
+            if [[ "$published_unscoped" != "true" ]]; then
+              echo "Skipping gameplay-tags deprecation because gameplay-tags was not published in this run."
               return
             fi
 
-            npm deprecate gameplay-tags@"*" "Use the official package: @potionify/gameplay-tags"
+            current_deprecation="$(npm view "gameplay-tags@${published_unscoped_version}" deprecated 2>/dev/null || true)"
+            if [[ "$current_deprecation" == "$deprecation_message" ]]; then
+              echo "gameplay-tags@${published_unscoped_version} is already deprecated with the expected message; skipping."
+              return
+            fi
+
+            if npm deprecate gameplay-tags@"*" "$deprecation_message"; then
+              return
+            fi
+
+            current_deprecation="$(npm view "gameplay-tags@${published_unscoped_version}" deprecated 2>/dev/null || true)"
+            if [[ "$current_deprecation" == "$deprecation_message" ]]; then
+              echo "gameplay-tags deprecation already matches after npm deprecate retry check."
+              return
+            fi
+
+            echo "Failed to deprecate gameplay-tags with the expected message." >&2
+            return 1
           }
 
-          case "${{ inputs.package }}" in
-            both)
-              publish_workspace "@potionify/gameplay-tags"
-              publish_workspace "gameplay-tags"
+          publish_selected_workspaces() {
+            local publish_kind="$1"
+
+            case "${{ inputs.package }}" in
+              both)
+                publish_workspace "@potionify/gameplay-tags" "$publish_kind"
+                publish_workspace "gameplay-tags" "$publish_kind"
+                ;;
+              "@potionify/gameplay-tags")
+                publish_workspace "@potionify/gameplay-tags" "$publish_kind"
+                ;;
+              gameplay-tags)
+                publish_workspace "gameplay-tags" "$publish_kind"
+                ;;
+              *)
+                echo "Unsupported package selection: ${{ inputs.package }}" >&2
+                return 1
+                ;;
+            esac
+          }
+
+          case "${{ inputs['publish-mode'] }}" in
+            "dry run then publish")
+              publish_selected_workspaces dry-run
+              publish_selected_workspaces publish
               deprecate_unscoped_package
               ;;
-            "@potionify/gameplay-tags")
-              publish_workspace "@potionify/gameplay-tags"
+            "dry run only")
+              publish_selected_workspaces dry-run
+              echo "Skipping gameplay-tags deprecation during dry run."
               ;;
-            gameplay-tags)
-              publish_workspace "gameplay-tags"
+            "publish only")
+              publish_selected_workspaces publish
               deprecate_unscoped_package
+              ;;
+            *)
+              echo "Unsupported publish mode: ${{ inputs['publish-mode'] }}" >&2
+              exit 1
               ;;
           esac
 
