@@ -95,16 +95,27 @@ jobs:
               "${dry_run_flag[@]}"
           }
 
+          deprecate_unscoped_package() {
+            if [[ "${{ inputs['dry-run'] }}" == "true" ]]; then
+              echo "Skipping gameplay-tags deprecation during dry run."
+              return
+            fi
+
+            npm deprecate gameplay-tags@"*" "Use the official package: @potionify/gameplay-tags"
+          }
+
           case "${{ inputs.package }}" in
             both)
               publish_workspace "@potionify/gameplay-tags"
               publish_workspace "gameplay-tags"
+              deprecate_unscoped_package
               ;;
             "@potionify/gameplay-tags")
               publish_workspace "@potionify/gameplay-tags"
               ;;
             gameplay-tags)
               publish_workspace "gameplay-tags"
+              deprecate_unscoped_package
               ;;
           esac
 

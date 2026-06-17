@@ -9,7 +9,7 @@ The package exposes TypeScript-friendly camelCase methods while keeping Unreal-s
 - `@potionify/gameplay-tags`: official package.
 - `gameplay-tags`: small handoff package that re-exports the scoped package.
 
-The unscoped `gameplay-tags` package should be published only to protect the name and guide accidental installs. After publishing it, deprecate it with a message like:
+The unscoped `gameplay-tags` package should be published only to protect the name and guide accidental installs. The Publish workflow automatically deprecates it after real publishes that include `gameplay-tags`. The manual command remains useful if the message needs to be repaired later:
 
 ```sh
 npm deprecate gameplay-tags@"*" "Use the official package: @potionify/gameplay-tags"
@@ -122,9 +122,9 @@ npm publish -w @potionify/gameplay-tags --tag alpha
 npm publish -w gameplay-tags --tag alpha
 ```
 
-The preferred publishing path is the manual GitHub Actions `Publish` workflow. It uses the repository `NPMJS_TOKEN` secret, runs `npm run check`, defaults to a dry run, skips workspace versions that already exist on npm, publishes with provenance, and requires an explicit confirmation before publishing with the `latest` dist-tag.
+The preferred publishing path is the manual GitHub Actions `Publish` workflow. It uses the repository `NPMJS_TOKEN` secret, runs `npm run check`, defaults to a dry run, skips workspace versions that already exist on npm, publishes with provenance, automatically deprecates the unscoped handoff package after real runs that include `gameplay-tags`, and requires an explicit confirmation before publishing with the `latest` dist-tag.
 
-Use the `Deprecate Unscoped Package` workflow after publishing `gameplay-tags`:
+Use the `Deprecate Unscoped Package` workflow only as a manual repair path if the deprecation message needs to be applied again:
 
 ```sh
 npm deprecate gameplay-tags@"*" "Use the official package: @potionify/gameplay-tags"
