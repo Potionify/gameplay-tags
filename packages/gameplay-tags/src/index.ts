@@ -1,16 +1,116 @@
 export type GameplayTagLike = FGameplayTag | string;
 export type GameplayTagContainerLike = FGameplayTagContainer | Iterable<GameplayTagLike>;
 
+export enum EGameplayTagSourceType {
+  Native = "Native",
+  DefaultTagList = "DefaultTagList",
+  TagList = "TagList",
+  RestrictedTagList = "RestrictedTagList",
+  DataTable = "DataTable",
+  Invalid = "Invalid"
+}
+
 export interface GameplayTagValidationResult {
   isValid: boolean;
   error: string;
   fixedString: string;
 }
 
-export interface GameplayTagTableRow {
+export interface FGameplayTagTableRow {
   Tag: string;
   DevComment?: string;
 }
+
+export type GameplayTagTableRow = FGameplayTagTableRow;
+
+export interface FRestrictedGameplayTagTableRow extends FGameplayTagTableRow {
+  bAllowNonRestrictedChildren?: boolean;
+}
+
+export interface FGameplayTagRedirect {
+  OldTagName: string;
+  NewTagName: string;
+}
+
+export interface GameplayTagEditorData {
+  comment: string;
+  firstTagSource: string;
+  tagSources: string[];
+  sourceTypes: EGameplayTagSourceType[];
+  isTagExplicit: boolean;
+  isRestrictedTag: boolean;
+  allowNonRestrictedChildren: boolean;
+}
+
+export type GameplayTagDictionaryDiagnosticLevel = "error" | "warning";
+
+export interface GameplayTagDictionaryDiagnostic {
+  level: GameplayTagDictionaryDiagnosticLevel;
+  code: string;
+  message: string;
+  tag?: string;
+  index?: number;
+}
+
+export interface GameplayTagDictionaryEntry {
+  tag: string;
+  devComment?: string;
+  sourceName?: string;
+  sourceType?: EGameplayTagSourceType;
+  isExplicit?: boolean;
+  isRestricted?: boolean;
+  allowNonRestrictedChildren?: boolean;
+}
+
+export interface GameplayTagDictionaryExport {
+  gameplayTagList: FGameplayTagTableRow[];
+  restrictedGameplayTagList: FRestrictedGameplayTagTableRow[];
+  gameplayTagRedirects: FGameplayTagRedirect[];
+  entries: GameplayTagDictionaryEntry[];
+}
+
+export interface GameplayTagDictionaryImportOptions {
+  sourceName?: string;
+  sourceType?: EGameplayTagSourceType;
+  restrictedSourceName?: string;
+  repairInvalidTags?: boolean;
+}
+
+export interface GameplayTagDictionaryImportResult {
+  importedTags: FGameplayTagContainer;
+  gameplayTagList: FGameplayTagTableRow[];
+  restrictedGameplayTagList: FRestrictedGameplayTagTableRow[];
+  gameplayTagRedirects: FGameplayTagRedirect[];
+  diagnostics: GameplayTagDictionaryDiagnostic[];
+}
+
+export interface GameplayTagDictionaryExportOptions {
+  onlyIncludeDictionaryTags?: boolean;
+  includeRedirects?: boolean;
+}
+
+export interface GameplayTagDictionaryValidationResult {
+  isValid: boolean;
+  diagnostics: GameplayTagDictionaryDiagnostic[];
+}
+
+export interface GameplayTagDictionaryShape {
+  gameplayTagList?: readonly FGameplayTagTableRow[];
+  GameplayTagList?: readonly FGameplayTagTableRow[];
+  restrictedGameplayTagList?: readonly FRestrictedGameplayTagTableRow[];
+  RestrictedGameplayTagList?: readonly FRestrictedGameplayTagTableRow[];
+  gameplayTagRedirects?: readonly FGameplayTagRedirect[];
+  GameplayTagRedirects?: readonly FGameplayTagRedirect[];
+  tags?: readonly GameplayTagDictionaryEntry[];
+  Tags?: readonly GameplayTagDictionaryEntry[];
+  entries?: readonly GameplayTagDictionaryEntry[];
+  Entries?: readonly GameplayTagDictionaryEntry[];
+  redirects?: readonly FGameplayTagRedirect[];
+  Redirects?: readonly FGameplayTagRedirect[];
+}
+
+export type GameplayTagDictionaryInput = readonly FGameplayTagTableRow[] | GameplayTagDictionaryShape;
+export type GameplayTagDictionaryFormat = "json" | "csv";
 
 export enum EGameplayTagQueryExprType {
   Undefined = "Undefined",
@@ -35,10 +135,20 @@ interface GameplayTagNode {
   devComment: string;
   restricted: boolean;
   allowNonRestrictedChildren: boolean;
+  sources: Map<string, EGameplayTagSourceType>;
 }
 
 const NAME_NONE = "";
 const DEFAULT_INVALID_TAG_CHARACTERS = "\"',\r\n\t";
+
+const DEFAULT_SOURCE_NAME = "Default";
+const DEFAULT_RESTRICTED_SOURCE_NAME = "Restricted";
+
+interface NormalizedGameplayTagDictionary {
+  gameplayTagList: FGameplayTagTableRow[];
+  restrictedGameplayTagList: FRestrictedGameplayTagTableRow[];
+  gameplayTagRedirects: FGameplayTagRedirect[];
+}
 
 function toTagName(value: GameplayTagLike): string {
   return value instanceof FGameplayTag ? value.GetTagName() : String(value);
@@ -46,6 +156,165 @@ function toTagName(value: GameplayTagLike): string {
 
 function keyForTagName(value: string): string {
   return value.toLocaleLowerCase("en-US");
+}
+
+function normalizeTagName(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function sourceKeyForName(value: string, type: EGameplayTagSourceType): string {
+  return `${type}:${value}`;
+}
+
+function parseBoolean(value: unknown): boolean {
+  if (typeof value === "boolean") {
+    return value;
+  }
+
+  if (typeof value === "number") {
+    return value !== 0;
+  }
+
+  return ["1", "true", "yes", "y"].includes(String(value ?? "").trim().toLocaleLowerCase("en-US"));
+}
+
+function normalizeTableRow(row: FGameplayTagTableRow): FGameplayTagTableRow {
+  return {
+    Tag: normalizeTagName(row.Tag),
+    DevComment: row.DevComment ? String(row.DevComment) : ""
+  };
+}
+
+function normalizeRestrictedTableRow(row: FRestrictedGameplayTagTableRow): FRestrictedGameplayTagTableRow {
+  return {
+    ...normalizeTableRow(row),
+    bAllowNonRestrictedChildren: parseBoolean(row.bAllowNonRestrictedChildren)
+  };
+}
+
+function normalizeRedirect(redirect: FGameplayTagRedirect): FGameplayTagRedirect {
+  return {
+    OldTagName: normalizeTagName(redirect.OldTagName),
+    NewTagName: normalizeTagName(redirect.NewTagName)
+  };
+}
+
+function normalizeDictionaryEntry(entry: GameplayTagDictionaryEntry): FGameplayTagTableRow | FRestrictedGameplayTagTableRow {
+  const row = {
+    Tag: normalizeTagName(entry.tag),
+    DevComment: entry.devComment ? String(entry.devComment) : ""
+  };
+
+  if (parseBoolean(entry.isRestricted)) {
+    return {
+      ...row,
+      bAllowNonRestrictedChildren: parseBoolean(entry.allowNonRestrictedChildren)
+    };
+  }
+
+  return row;
+}
+
+function normalizeGameplayTagDictionary(input: GameplayTagDictionaryInput): NormalizedGameplayTagDictionary {
+  if (Array.isArray(input)) {
+    return {
+      gameplayTagList: input.map(normalizeTableRow),
+      restrictedGameplayTagList: [],
+      gameplayTagRedirects: []
+    };
+  }
+
+  const dictionary = input as GameplayTagDictionaryShape;
+  const rows = dictionary.gameplayTagList ?? dictionary.GameplayTagList ?? [];
+  const restrictedRows = dictionary.restrictedGameplayTagList ?? dictionary.RestrictedGameplayTagList ?? [];
+  const redirects = dictionary.gameplayTagRedirects ?? dictionary.GameplayTagRedirects ?? dictionary.redirects ?? dictionary.Redirects ?? [];
+  const entries = dictionary.entries ?? dictionary.Entries ?? dictionary.tags ?? dictionary.Tags ?? [];
+
+  const entryRows = entries.map(normalizeDictionaryEntry);
+  const entryGameplayRows = entryRows.filter((row): row is FGameplayTagTableRow => !("bAllowNonRestrictedChildren" in row));
+  const entryRestrictedRows = entryRows.filter((row): row is FRestrictedGameplayTagTableRow => "bAllowNonRestrictedChildren" in row);
+
+  return {
+    gameplayTagList: [...rows.map(normalizeTableRow), ...entryGameplayRows],
+    restrictedGameplayTagList: [...restrictedRows.map(normalizeRestrictedTableRow), ...entryRestrictedRows],
+    gameplayTagRedirects: redirects.map(normalizeRedirect)
+  };
+}
+
+function escapeCsvField(value: unknown): string {
+  const field = String(value ?? "");
+
+  if (!/[",\r\n]/.test(field)) {
+    return field;
+  }
+
+  return `"${field.replaceAll("\"", "\"\"")}"`;
+}
+
+function parseCsvRows(source: string): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let field = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index];
+    const next = source[index + 1];
+
+    if (character === "\"") {
+      if (inQuotes && next === "\"") {
+        field += "\"";
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (character === "," && !inQuotes) {
+      row.push(field);
+      field = "";
+      continue;
+    }
+
+    if ((character === "\n" || character === "\r") && !inQuotes) {
+      if (character === "\r" && next === "\n") {
+        index += 1;
+      }
+
+      row.push(field);
+      field = "";
+
+      if (row.some((cell) => cell.length > 0)) {
+        rows.push(row);
+      }
+
+      row = [];
+      continue;
+    }
+
+    field += character;
+  }
+
+  row.push(field);
+
+  if (row.some((cell) => cell.length > 0)) {
+    rows.push(row);
+  }
+
+  return rows;
+}
+
+function valueForHeader(row: Record<string, string>, ...headers: string[]): string {
+  for (const header of headers) {
+    const value = row[header.toLocaleLowerCase("en-US")];
+
+    if (value !== undefined) {
+      return value;
+    }
+  }
+
+  return "";
 }
 
 function uniqueTags(tags: Iterable<FGameplayTag>): FGameplayTag[] {
@@ -150,6 +419,122 @@ function replaceExpressionTags(expression: FGameplayTagQueryExpression, replacem
   };
 
   return replace(expression);
+}
+
+export function parseGameplayTagDictionary(source: string, format: GameplayTagDictionaryFormat = "json"): GameplayTagDictionaryExport {
+  if (format === "csv") {
+    return parseGameplayTagDictionaryCsv(source);
+  }
+
+  const normalized = normalizeGameplayTagDictionary(JSON.parse(source) as GameplayTagDictionaryInput);
+  return {
+    ...normalized,
+    entries: []
+  };
+}
+
+export function ParseGameplayTagDictionary(source: string, format: GameplayTagDictionaryFormat = "json"): GameplayTagDictionaryExport {
+  return parseGameplayTagDictionary(source, format);
+}
+
+export function stringifyGameplayTagDictionary(dictionary: GameplayTagDictionaryInput, format: GameplayTagDictionaryFormat = "json"): string {
+  const normalized = normalizeGameplayTagDictionary(dictionary);
+
+  if (format === "csv") {
+    return stringifyGameplayTagDictionaryCsv(normalized);
+  }
+
+  return JSON.stringify(
+    {
+      gameplayTagList: normalized.gameplayTagList,
+      restrictedGameplayTagList: normalized.restrictedGameplayTagList,
+      gameplayTagRedirects: normalized.gameplayTagRedirects
+    },
+    null,
+    2
+  );
+}
+
+export function StringifyGameplayTagDictionary(dictionary: GameplayTagDictionaryInput, format: GameplayTagDictionaryFormat = "json"): string {
+  return stringifyGameplayTagDictionary(dictionary, format);
+}
+
+export function parseGameplayTagDictionaryCsv(source: string): GameplayTagDictionaryExport {
+  const [headerRow = [], ...bodyRows] = parseCsvRows(source);
+  const headers = headerRow.map((header) => header.trim().toLocaleLowerCase("en-US"));
+  const gameplayTagList: FGameplayTagTableRow[] = [];
+  const restrictedGameplayTagList: FRestrictedGameplayTagTableRow[] = [];
+  const gameplayTagRedirects: FGameplayTagRedirect[] = [];
+
+  for (const values of bodyRows) {
+    const row = Object.fromEntries(headers.map((header, index) => [header, values[index]?.trim() ?? ""]));
+    const oldTagName = valueForHeader(row, "oldtagname", "old tag name", "old");
+    const newTagName = valueForHeader(row, "newtagname", "new tag name", "new");
+    const tag = valueForHeader(row, "tag", "tagname", "tag name");
+
+    if (oldTagName || newTagName) {
+      gameplayTagRedirects.push({
+        OldTagName: oldTagName,
+        NewTagName: newTagName
+      });
+      continue;
+    }
+
+    if (!tag) {
+      continue;
+    }
+
+    const devComment = valueForHeader(row, "devcomment", "dev comment", "comment");
+    const restricted = parseBoolean(valueForHeader(row, "restricted", "bisrestrictedtag", "isrestricted"));
+    const allowNonRestrictedChildren = parseBoolean(valueForHeader(row, "ballownonrestrictedchildren", "allownonrestrictedchildren"));
+
+    if (restricted) {
+      restrictedGameplayTagList.push({
+        Tag: tag,
+        DevComment: devComment,
+        bAllowNonRestrictedChildren: allowNonRestrictedChildren
+      });
+    } else {
+      gameplayTagList.push({
+        Tag: tag,
+        DevComment: devComment
+      });
+    }
+  }
+
+  return {
+    gameplayTagList,
+    restrictedGameplayTagList,
+    gameplayTagRedirects,
+    entries: []
+  };
+}
+
+export function ParseGameplayTagDictionaryCsv(source: string): GameplayTagDictionaryExport {
+  return parseGameplayTagDictionaryCsv(source);
+}
+
+export function stringifyGameplayTagDictionaryCsv(dictionary: GameplayTagDictionaryInput): string {
+  const normalized = normalizeGameplayTagDictionary(dictionary);
+  const rows = [["Tag", "DevComment", "Restricted", "bAllowNonRestrictedChildren", "OldTagName", "NewTagName"]];
+
+  for (const row of normalized.gameplayTagList) {
+    rows.push([row.Tag, row.DevComment ?? "", "false", "false", "", ""]);
+  }
+
+  for (const row of normalized.restrictedGameplayTagList) {
+    rows.push([row.Tag, row.DevComment ?? "", "true", String(Boolean(row.bAllowNonRestrictedChildren)), "", ""]);
+  }
+
+  for (const redirect of normalized.gameplayTagRedirects) {
+    rows.push(["", "", "", "", redirect.OldTagName, redirect.NewTagName]);
+  }
+
+  return rows.map((row) => row.map(escapeCsvField).join(",")).join("\n");
+}
+
+export function StringifyGameplayTagDictionaryCsv(dictionary: GameplayTagDictionaryInput): string {
+  return stringifyGameplayTagDictionaryCsv(dictionary);
 }
 
 export class FGameplayTag {
@@ -1162,6 +1547,7 @@ export class UGameplayTagsManager {
   }
 
   private readonly nodes = new Map<string, GameplayTagNode>();
+  private readonly redirects = new Map<string, FGameplayTagRedirect>();
   InvalidTagCharacters = DEFAULT_INVALID_TAG_CHARACTERS;
 
   get invalidTagCharacters(): string {
@@ -1195,7 +1581,7 @@ export class UGameplayTagsManager {
   }
 
   RequestGameplayTag(TagName: string, ErrorIfNotFound = true): FGameplayTag {
-    const node = this.nodes.get(keyForTagName(TagName));
+    const node = this.nodes.get(keyForTagName(this.ResolveRedirectedTagName(TagName)));
 
     if (node) {
       return node.tag;
@@ -1319,7 +1705,7 @@ export class UGameplayTagsManager {
       throw new Error(`Invalid gameplay tag "${TagName}": ${validation.error}`);
     }
 
-    return this.AddNodePath(validation.fixedString, true, TagDevComment, false, false);
+    return this.AddNodePath(validation.fixedString, true, TagDevComment, false, false, "Native", EGameplayTagSourceType.Native);
   }
 
   doneAddingNativeTags(): void {
@@ -1424,12 +1810,351 @@ export class UGameplayTagsManager {
     }
   }
 
+  isDictionaryTag(TagName: string): boolean {
+    return this.IsDictionaryTag(TagName);
+  }
+
+  IsDictionaryTag(TagName: string): boolean {
+    return Boolean(this.nodes.get(keyForTagName(TagName))?.explicit);
+  }
+
+  getTagEditorData(TagName: string): GameplayTagEditorData | undefined {
+    return this.GetTagEditorData(TagName);
+  }
+
+  GetTagEditorData(TagName: string): GameplayTagEditorData | undefined {
+    const node = this.nodes.get(keyForTagName(TagName));
+
+    if (!node) {
+      return undefined;
+    }
+
+    const tagSources = [...node.sources.keys()].map((source) => source.split(":").slice(1).join(":"));
+    const sourceTypes = [...node.sources.values()];
+
+    return {
+      comment: node.devComment,
+      firstTagSource: tagSources[0] ?? "",
+      tagSources,
+      sourceTypes,
+      isTagExplicit: node.explicit,
+      isRestrictedTag: node.restricted,
+      allowNonRestrictedChildren: node.allowNonRestrictedChildren
+    };
+  }
+
+  exportGameplayTagDictionary(options: GameplayTagDictionaryExportOptions = {}): GameplayTagDictionaryExport {
+    return this.ExportGameplayTagDictionary(options);
+  }
+
+  ExportGameplayTagDictionary(options: GameplayTagDictionaryExportOptions = {}): GameplayTagDictionaryExport {
+    const onlyIncludeDictionaryTags = options.onlyIncludeDictionaryTags ?? true;
+    const gameplayTagList: FGameplayTagTableRow[] = [];
+    const restrictedGameplayTagList: FRestrictedGameplayTagTableRow[] = [];
+    const entries: GameplayTagDictionaryEntry[] = [];
+
+    for (const node of [...this.nodes.values()].sort((left, right) => left.fullName.localeCompare(right.fullName, "en-US"))) {
+      if (node.explicit) {
+        if (node.restricted) {
+          restrictedGameplayTagList.push({
+            Tag: node.fullName,
+            DevComment: node.devComment,
+            bAllowNonRestrictedChildren: node.allowNonRestrictedChildren
+          });
+        } else {
+          gameplayTagList.push({
+            Tag: node.fullName,
+            DevComment: node.devComment
+          });
+        }
+      }
+
+      if (!onlyIncludeDictionaryTags || node.explicit) {
+        const editorData = this.GetTagEditorData(node.fullName);
+        const entry: GameplayTagDictionaryEntry = {
+          tag: node.fullName,
+          devComment: node.devComment,
+          isExplicit: node.explicit,
+          isRestricted: node.restricted,
+          allowNonRestrictedChildren: node.allowNonRestrictedChildren
+        };
+
+        if (editorData?.firstTagSource) {
+          entry.sourceName = editorData.firstTagSource;
+        }
+
+        if (editorData?.sourceTypes[0]) {
+          entry.sourceType = editorData.sourceTypes[0];
+        }
+
+        entries.push(entry);
+      }
+    }
+
+    return {
+      gameplayTagList,
+      restrictedGameplayTagList,
+      gameplayTagRedirects: options.includeRedirects === false ? [] : this.GetGameplayTagRedirects(),
+      entries
+    };
+  }
+
+  importGameplayTagDictionary(input: GameplayTagDictionaryInput, options: GameplayTagDictionaryImportOptions = {}): GameplayTagDictionaryImportResult {
+    return this.ImportGameplayTagDictionary(input, options);
+  }
+
+  ImportGameplayTagDictionary(input: GameplayTagDictionaryInput, options: GameplayTagDictionaryImportOptions = {}): GameplayTagDictionaryImportResult {
+    const normalized = normalizeGameplayTagDictionary(input);
+    const diagnostics = this.ValidateGameplayTagDictionary(input).diagnostics;
+    const importedTags = new FGameplayTagContainer();
+    const sourceName = options.sourceName ?? DEFAULT_SOURCE_NAME;
+    const sourceType = options.sourceType ?? EGameplayTagSourceType.DataTable;
+    const restrictedSourceName = options.restrictedSourceName ?? DEFAULT_RESTRICTED_SOURCE_NAME;
+
+    const normalizeForImport = (row: FGameplayTagTableRow, index: number): string | undefined => {
+      const validation = this.ValidateGameplayTagString(row.Tag);
+
+      if (validation.isValid) {
+        return validation.fixedString;
+      }
+
+      if (options.repairInvalidTags && validation.fixedString) {
+        diagnostics.push({
+          level: "warning",
+          code: "tag-repaired",
+          message: `Imported repaired tag "${validation.fixedString}".`,
+          tag: row.Tag,
+          index
+        });
+        return validation.fixedString;
+      }
+
+      return undefined;
+    };
+
+    normalized.gameplayTagList.forEach((row, index) => {
+      const tagName = normalizeForImport(row, index);
+
+      if (!tagName) {
+        return;
+      }
+
+      importedTags.AddTag(this.AddNodePath(tagName, true, row.DevComment ?? "", false, false, sourceName, sourceType));
+    });
+
+    normalized.restrictedGameplayTagList.forEach((row, index) => {
+      const tagName = normalizeForImport(row, normalized.gameplayTagList.length + index);
+
+      if (!tagName) {
+        return;
+      }
+
+      importedTags.AddTag(this.AddNodePath(
+        tagName,
+        true,
+        row.DevComment ?? "",
+        true,
+        parseBoolean(row.bAllowNonRestrictedChildren),
+        restrictedSourceName,
+        EGameplayTagSourceType.RestrictedTagList
+      ));
+    });
+
+    for (const redirect of normalized.gameplayTagRedirects) {
+      if (redirect.OldTagName && redirect.NewTagName) {
+        this.AddGameplayTagRedirect(redirect);
+      }
+    }
+
+    return {
+      importedTags,
+      gameplayTagList: normalized.gameplayTagList,
+      restrictedGameplayTagList: normalized.restrictedGameplayTagList,
+      gameplayTagRedirects: normalized.gameplayTagRedirects,
+      diagnostics
+    };
+  }
+
+  validateGameplayTagDictionary(input: GameplayTagDictionaryInput): GameplayTagDictionaryValidationResult {
+    return this.ValidateGameplayTagDictionary(input);
+  }
+
+  ValidateGameplayTagDictionary(input: GameplayTagDictionaryInput): GameplayTagDictionaryValidationResult {
+    const normalized = normalizeGameplayTagDictionary(input);
+    const diagnostics: GameplayTagDictionaryDiagnostic[] = [];
+    const seenTags = new Map<string, number>();
+    const availableTags = new Set<string>(this.nodes.keys());
+    const allRows = [...normalized.gameplayTagList, ...normalized.restrictedGameplayTagList];
+
+    allRows.forEach((row, index) => {
+      const tag = normalizeTagName(row.Tag);
+
+      if (!tag) {
+        diagnostics.push({
+          level: "error",
+          code: "tag-empty",
+          message: "Tag may not be empty.",
+          index
+        });
+        return;
+      }
+
+      const validation = this.ValidateGameplayTagString(tag);
+
+      if (!validation.isValid) {
+        diagnostics.push({
+          level: "error",
+          code: "tag-invalid",
+          message: validation.error,
+          tag,
+          index
+        });
+      }
+
+      const key = keyForTagName(validation.fixedString || tag);
+      const firstIndex = seenTags.get(key);
+
+      if (firstIndex !== undefined) {
+        diagnostics.push({
+          level: "warning",
+          code: "tag-duplicate",
+          message: `Duplicate tag also appears at row ${firstIndex + 1}.`,
+          tag,
+          index
+        });
+      } else {
+        seenTags.set(key, index);
+      }
+
+      availableTags.add(key);
+    });
+
+    normalized.gameplayTagRedirects.forEach((redirect, index) => {
+      const oldTagName = normalizeTagName(redirect.OldTagName);
+      const newTagName = normalizeTagName(redirect.NewTagName);
+
+      if (!oldTagName || !newTagName) {
+        diagnostics.push({
+          level: "error",
+          code: "redirect-empty",
+          message: "Redirects require both OldTagName and NewTagName.",
+          index
+        });
+        return;
+      }
+
+      if (keyForTagName(oldTagName) === keyForTagName(newTagName)) {
+        diagnostics.push({
+          level: "error",
+          code: "redirect-loop",
+          message: "Redirect old and new tag names must be different.",
+          tag: oldTagName,
+          index
+        });
+      }
+
+      const newValidation = this.ValidateGameplayTagString(newTagName);
+
+      if (!newValidation.isValid) {
+        diagnostics.push({
+          level: "error",
+          code: "redirect-target-invalid",
+          message: newValidation.error,
+          tag: newTagName,
+          index
+        });
+      }
+
+      if (!availableTags.has(keyForTagName(newValidation.fixedString || newTagName))) {
+        diagnostics.push({
+          level: "warning",
+          code: "redirect-target-missing",
+          message: "Redirect target is not currently in the dictionary.",
+          tag: newTagName,
+          index
+        });
+      }
+    });
+
+    return {
+      isValid: diagnostics.every((diagnostic) => diagnostic.level !== "error"),
+      diagnostics
+    };
+  }
+
+  importGameplayTagTableRows(TagRows: readonly FGameplayTagTableRow[], SourceName = DEFAULT_SOURCE_NAME): GameplayTagDictionaryImportResult {
+    return this.ImportGameplayTagTableRows(TagRows, SourceName);
+  }
+
+  ImportGameplayTagTableRows(TagRows: readonly FGameplayTagTableRow[], SourceName = DEFAULT_SOURCE_NAME): GameplayTagDictionaryImportResult {
+    return this.ImportGameplayTagDictionary({ gameplayTagList: TagRows }, {
+      sourceName: SourceName,
+      sourceType: EGameplayTagSourceType.DataTable
+    });
+  }
+
+  importRestrictedGameplayTagTableRows(TagRows: readonly FRestrictedGameplayTagTableRow[], SourceName = DEFAULT_RESTRICTED_SOURCE_NAME): GameplayTagDictionaryImportResult {
+    return this.ImportRestrictedGameplayTagTableRows(TagRows, SourceName);
+  }
+
+  ImportRestrictedGameplayTagTableRows(TagRows: readonly FRestrictedGameplayTagTableRow[], SourceName = DEFAULT_RESTRICTED_SOURCE_NAME): GameplayTagDictionaryImportResult {
+    return this.ImportGameplayTagDictionary({ restrictedGameplayTagList: TagRows }, {
+      restrictedSourceName: SourceName
+    });
+  }
+
+  exportGameplayTagTableRows(): FGameplayTagTableRow[] {
+    return this.ExportGameplayTagTableRows();
+  }
+
+  ExportGameplayTagTableRows(): FGameplayTagTableRow[] {
+    return this.ExportGameplayTagDictionary().gameplayTagList;
+  }
+
+  exportRestrictedGameplayTagTableRows(): FRestrictedGameplayTagTableRow[] {
+    return this.ExportRestrictedGameplayTagTableRows();
+  }
+
+  ExportRestrictedGameplayTagTableRows(): FRestrictedGameplayTagTableRow[] {
+    return this.ExportGameplayTagDictionary().restrictedGameplayTagList;
+  }
+
+  addGameplayTagRedirect(Redirect: FGameplayTagRedirect): void {
+    this.AddGameplayTagRedirect(Redirect);
+  }
+
+  AddGameplayTagRedirect(Redirect: FGameplayTagRedirect): void {
+    const normalized = normalizeRedirect(Redirect);
+
+    if (!normalized.OldTagName || !normalized.NewTagName) {
+      return;
+    }
+
+    this.redirects.set(keyForTagName(normalized.OldTagName), normalized);
+  }
+
+  getGameplayTagRedirects(): FGameplayTagRedirect[] {
+    return this.GetGameplayTagRedirects();
+  }
+
+  GetGameplayTagRedirects(): FGameplayTagRedirect[] {
+    return [...this.redirects.values()].sort((left, right) => left.OldTagName.localeCompare(right.OldTagName, "en-US"));
+  }
+
+  redirectGameplayTagName(TagName: string): string {
+    return this.RedirectGameplayTagName(TagName);
+  }
+
+  RedirectGameplayTagName(TagName: string): string {
+    return this.ResolveRedirectedTagName(TagName);
+  }
+
   validateTagCreation(TagName: string): boolean {
     return this.ValidateTagCreation(TagName);
   }
 
   ValidateTagCreation(TagName: string): boolean {
-    return this.nodes.has(keyForTagName(TagName));
+    return this.IsDictionaryTag(TagName);
   }
 
   splitGameplayTagFName(Tag: FGameplayTag): string[] {
@@ -1444,8 +2169,16 @@ export class UGameplayTagsManager {
     this.AddTagTableRow(TagRow, SourceName, bIsRestrictedTag);
   }
 
-  AddTagTableRow(TagRow: GameplayTagTableRow, _SourceName = "Default", bIsRestrictedTag = false): void {
-    this.AddNodePath(TagRow.Tag, true, TagRow.DevComment ?? "", bIsRestrictedTag, false);
+  AddTagTableRow(TagRow: GameplayTagTableRow, SourceName = DEFAULT_SOURCE_NAME, bIsRestrictedTag = false): void {
+    this.AddNodePath(
+      TagRow.Tag,
+      true,
+      TagRow.DevComment ?? "",
+      bIsRestrictedTag,
+      false,
+      SourceName,
+      bIsRestrictedTag ? EGameplayTagSourceType.RestrictedTagList : EGameplayTagSourceType.DataTable
+    );
   }
 
   addTags(TagNames: readonly string[]): FGameplayTagContainer {
@@ -1487,9 +2220,37 @@ export class UGameplayTagsManager {
 
   Reset(): void {
     this.nodes.clear();
+    this.redirects.clear();
   }
 
-  private AddNodePath(fullName: string, explicit: boolean, devComment: string, restricted: boolean, allowNonRestrictedChildren: boolean): FGameplayTag {
+  private ResolveRedirectedTagName(TagName: string): string {
+    let current = normalizeTagName(TagName);
+    const visited = new Set<string>();
+
+    for (let depth = 0; depth < 32; depth += 1) {
+      const key = keyForTagName(current);
+      const redirect = this.redirects.get(key);
+
+      if (!redirect || visited.has(key)) {
+        return current;
+      }
+
+      visited.add(key);
+      current = redirect.NewTagName;
+    }
+
+    return current;
+  }
+
+  private AddNodePath(
+    fullName: string,
+    explicit: boolean,
+    devComment: string,
+    restricted: boolean,
+    allowNonRestrictedChildren: boolean,
+    sourceName: string,
+    sourceType: EGameplayTagSourceType
+  ): FGameplayTag {
     const parts = splitTagName(fullName);
     let parentKey = "";
     let currentTag = new FGameplayTag();
@@ -1511,7 +2272,8 @@ export class UGameplayTagsManager {
           explicit: isLeaf ? explicit : false,
           devComment: isLeaf ? devComment : "",
           restricted: isLeaf ? restricted : false,
-          allowNonRestrictedChildren: isLeaf ? allowNonRestrictedChildren : true
+          allowNonRestrictedChildren: isLeaf ? allowNonRestrictedChildren : true,
+          sources: new Map([[sourceKeyForName(sourceName, sourceType), sourceType]])
         };
         this.nodes.set(key, node);
 
@@ -1523,6 +2285,9 @@ export class UGameplayTagsManager {
         node.devComment = devComment;
         node.restricted = restricted;
         node.allowNonRestrictedChildren = allowNonRestrictedChildren;
+        node.sources.set(sourceKeyForName(sourceName, sourceType), sourceType);
+      } else {
+        node.sources.set(sourceKeyForName(sourceName, sourceType), sourceType);
       }
 
       parentKey = key;
@@ -1781,6 +2546,30 @@ export function MakeGameplayTagContainer(tags: GameplayTagContainerLike): FGamep
 
 export function makeGameplayTagContainer(tags: GameplayTagContainerLike): FGameplayTagContainer {
   return MakeGameplayTagContainer(tags);
+}
+
+export function ImportGameplayTagDictionary(input: GameplayTagDictionaryInput, options: GameplayTagDictionaryImportOptions = {}): GameplayTagDictionaryImportResult {
+  return UGameplayTagsManager.Get().ImportGameplayTagDictionary(input, options);
+}
+
+export function importGameplayTagDictionary(input: GameplayTagDictionaryInput, options: GameplayTagDictionaryImportOptions = {}): GameplayTagDictionaryImportResult {
+  return ImportGameplayTagDictionary(input, options);
+}
+
+export function ExportGameplayTagDictionary(options: GameplayTagDictionaryExportOptions = {}): GameplayTagDictionaryExport {
+  return UGameplayTagsManager.Get().ExportGameplayTagDictionary(options);
+}
+
+export function exportGameplayTagDictionary(options: GameplayTagDictionaryExportOptions = {}): GameplayTagDictionaryExport {
+  return ExportGameplayTagDictionary(options);
+}
+
+export function ValidateGameplayTagDictionary(input: GameplayTagDictionaryInput): GameplayTagDictionaryValidationResult {
+  return UGameplayTagsManager.Get().ValidateGameplayTagDictionary(input);
+}
+
+export function validateGameplayTagDictionary(input: GameplayTagDictionaryInput): GameplayTagDictionaryValidationResult {
+  return ValidateGameplayTagDictionary(input);
 }
 
 export {

@@ -1,0 +1,26 @@
+name: Deprecate Unscoped Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      message:
+        description: Deprecation message
+        required: true
+        type: string
+        default: "Use the official package: @potionify/gameplay-tags"
+
+permissions:
+  contents: read
+
+jobs:
+  deprecate:
+    runs-on: ubuntu-latest
+    environment: npm
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPMJS_TOKEN }}
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - run: npm deprecate gameplay-tags@"*" "${{ inputs.message }}"

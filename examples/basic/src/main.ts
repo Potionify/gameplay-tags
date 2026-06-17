@@ -1,37 +1,94 @@
-import { createIcons, GitBranch, ListChecks, Search, ShieldCheck, Tag, Tags, X } from "lucide";
 import {
+  ClipboardCheck,
+  Database,
+  Download,
+  FileJson,
+  GitBranch,
+  ListChecks,
+  RotateCcw,
+  Search,
+  ShieldCheck,
+  TableProperties,
+  Tag,
+  Tags,
+  Upload,
+  Workflow,
+  X
+} from "lucide";
+import { createIcons } from "lucide";
+import {
+  EGameplayTagSourceType,
   FGameplayTagQuery,
   FGameplayTagQueryExpression,
+  GameplayTagDictionaryDiagnostic,
+  GameplayTagDictionaryFormat,
   GameplayTagsManager,
+  importGameplayTagDictionary,
   makeGameplayTagContainer,
-  requestGameplayTag
+  parseGameplayTagDictionary,
+  requestGameplayTag,
+  stringifyGameplayTagDictionary,
+  validateGameplayTagDictionary
 } from "@potionify/gameplay-tags";
 import "./styles.css";
 
-const seedTags = [
-  "Note.Status.Draft",
-  "Note.Status.Review",
-  "Note.Status.Published",
-  "Note.Type.Journal",
-  "Note.Type.Task",
-  "Note.Topic.Engine",
-  "Note.Topic.Rendering",
-  "Note.Topic.Design",
-  "Character.State.Stunned",
-  "Character.State.Burning"
-];
+const seedDictionary = {
+  gameplayTagList: [
+    { Tag: "Note.Status.Draft", DevComment: "Editable note" },
+    { Tag: "Note.Status.Review", DevComment: "Ready for review" },
+    { Tag: "Note.Status.Published", DevComment: "Visible to readers" },
+    { Tag: "Note.Type.Journal", DevComment: "Long-form note" },
+    { Tag: "Note.Type.Task", DevComment: "Actionable note" },
+    { Tag: "Note.Topic.Engine", DevComment: "Engine notes" },
+    { Tag: "Note.Topic.Rendering", DevComment: "Rendering notes" },
+    { Tag: "Note.Topic.Design", DevComment: "Design notes" },
+    { Tag: "Character.State.Stunned", DevComment: "Gameplay state" },
+    { Tag: "Character.State.Burning", DevComment: "Gameplay state" }
+  ],
+  restrictedGameplayTagList: [
+    { Tag: "Note.Internal.Archived", DevComment: "Hidden archive state", bAllowNonRestrictedChildren: true }
+  ],
+  gameplayTagRedirects: [
+    { OldTagName: "Note.Status.ReadyForReview", NewTagName: "Note.Status.Review" }
+  ]
+};
 
 const manager = GameplayTagsManager.get();
-manager.reset();
-seedTags.forEach((tag) => manager.addNativeGameplayTag(tag));
 
 const state = {
   owned: new Set(["Note.Status.Draft", "Note.Topic.Engine", "Note.Type.Task"]),
   filter: "Note",
   required: "Note.Status",
   blocked: "Character.State",
-  validation: "Note.Topic.New"
+  validation: " .Note.Bad,Tag. ",
+  sourceTag: "Note.Status.Draft",
+  dictionaryFormat: "json" as GameplayTagDictionaryFormat,
+  dictionaryText: "",
+  diagnostics: [] as GameplayTagDictionaryDiagnostic[],
+  importSummary: "Seed dictionary loaded"
 };
+
+function seed(): void {
+  manager.reset();
+  importGameplayTagDictionary(seedDictionary, {
+    sourceName: "ExampleNotes",
+    sourceType: EGameplayTagSourceType.TagList,
+    restrictedSourceName: "ExampleRestricted"
+  });
+  state.dictionaryText = stringifyGameplayTagDictionary(manager.exportGameplayTagDictionary(), state.dictionaryFormat);
+  state.diagnostics = [];
+  state.importSummary = "Seed dictionary loaded";
+  ensureSelections();
+}
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("\"", "&quot;")
+    .replaceAll("'", "&#39;");
+}
 
 function tagNames(tags: Iterable<{ getTagName(): string }>): string[] {
   return [...tags].map((tag) => tag.getTagName());
@@ -41,6 +98,46 @@ function dictionaryTags(onlyExplicit: boolean): string[] {
   const container = makeGameplayTagContainer([]);
   manager.requestAllGameplayTags(container, onlyExplicit);
   return tagNames(container).sort((left, right) => left.localeCompare(right));
+}
+
+function firstTag(fallback = ""): string {
+  return dictionaryTags(false)[0] ?? fallback;
+}
+
+function ensureSelections(): void {
+  const allTags = new Set(dictionaryTags(false));
+  const explicitTags = new Set(dictionaryTags(true));
+  const fallback = firstTag("Note");
+
+  for (const tag of [...state.owned]) {
+    if (!explicitTags.has(tag)) {
+      state.owned.delete(tag);
+    }
+  }
+
+  if (state.owned.size === 0) {
+    const firstExplicit = dictionaryTags(true)[0];
+
+    if (firstExplicit) {
+      state.owned.add(firstExplicit);
+    }
+  }
+
+  if (!allTags.has(state.required)) {
+    state.required = fallback;
+  }
+
+  if (!allTags.has(state.blocked)) {
+    state.blocked = fallback;
+  }
+
+  if (!allTags.has(state.filter)) {
+    state.filter = fallback;
+  }
+
+  if (!allTags.has(state.sourceTag)) {
+    state.sourceTag = fallback;
+  }
 }
 
 function ownedContainer() {
@@ -58,17 +155,46 @@ function toggleOwned(tag: string): void {
 }
 
 function setState(key: keyof typeof state, value: string): void {
+  if (key === "dictionaryFormat") {
+    state.dictionaryFormat = value as GameplayTagDictionaryFormat;
+    exportDictionary(state.dictionaryFormat);
+    return;
+  }
+
+  if (key === "dictionaryText") {
+    state.dictionaryText = value;
+    return;
+  }
+
   state[key] = value as never;
   render();
 }
 
+function tagOption(tag: string, selected: string): string {
+  return `<option value="${escapeHtml(tag)}" ${tag === selected ? "selected" : ""}>${escapeHtml(tag)}</option>`;
+}
+
 function pill(name: string, tone = "plain"): string {
-  return `<span class="pill ${tone}">${name}</span>`;
+  return `<span class="pill ${tone}">${escapeHtml(name)}</span>`;
 }
 
 function metric(label: string, value: boolean | number | string): string {
   const tone = value === true ? "yes" : value === false ? "no" : "plain";
-  return `<div class="metric"><span>${label}</span><strong class="${tone}">${String(value)}</strong></div>`;
+  return `<div class="metric"><span>${escapeHtml(label)}</span><strong class="${tone}">${escapeHtml(String(value))}</strong></div>`;
+}
+
+function renderDiagnostics(): string {
+  if (state.diagnostics.length === 0) {
+    return `<div class="diagnostic ok"><span>ok</span><strong>No diagnostics</strong></div>`;
+  }
+
+  return state.diagnostics.map((diagnostic) => `
+    <div class="diagnostic ${diagnostic.level}">
+      <span>${escapeHtml(diagnostic.level)} / ${escapeHtml(diagnostic.code)}</span>
+      <strong>${escapeHtml(diagnostic.message)}</strong>
+      ${diagnostic.tag ? `<em>${escapeHtml(diagnostic.tag)}</em>` : ""}
+    </div>
+  `).join("");
 }
 
 function renderDictionary(): string {
@@ -84,12 +210,18 @@ function renderDictionary(): string {
         <i data-lucide="tags"></i>
       </div>
       <div class="tag-list">
-        ${explicit.map((tag) => `
-          <label class="tag-row">
-            <input type="checkbox" data-owned="${tag}" ${state.owned.has(tag) ? "checked" : ""} />
-            <span>${tag}</span>
-          </label>
-        `).join("")}
+        ${explicit.map((tag) => {
+          const data = manager.getTagEditorData(tag);
+          return `
+            <label class="tag-row">
+              <input type="checkbox" data-owned="${escapeHtml(tag)}" ${state.owned.has(tag) ? "checked" : ""} />
+              <span>
+                <strong>${escapeHtml(tag)}</strong>
+                <em>${escapeHtml(data?.isRestrictedTag ? "restricted" : data?.firstTagSource || "dictionary")}</em>
+              </span>
+            </label>
+          `;
+        }).join("")}
       </div>
     </section>
   `;
@@ -125,6 +257,7 @@ function renderOwned(): string {
 function renderMatching(): string {
   const container = ownedContainer();
   const required = requestGameplayTag(state.required, false);
+  const redirected = requestGameplayTag("Note.Status.ReadyForReview", false);
   const firstOwned = container.first();
   const exact = required.isValid() ? container.hasTagExact(required) : false;
   const parent = required.isValid() ? container.hasTag(required) : false;
@@ -136,21 +269,21 @@ function renderMatching(): string {
       <div class="panel-header">
         <div>
           <h2>Matching</h2>
-          <p>${firstOwned.isValid() ? firstOwned.getTagName() : "None"} vs ${state.required}</p>
+          <p>${escapeHtml(firstOwned.isValid() ? firstOwned.getTagName() : "None")} vs ${escapeHtml(state.required)}</p>
         </div>
         <i data-lucide="search"></i>
       </div>
       <label class="field">
         <span>Tag to check</span>
         <select data-field="required">
-          ${dictionaryTags(false).map((tag) => `<option value="${tag}" ${tag === state.required ? "selected" : ""}>${tag}</option>`).join("")}
+          ${dictionaryTags(false).map((tag) => tagOption(tag, state.required)).join("")}
         </select>
       </label>
       <div class="metric-grid">
         ${metric("hasTag", parent)}
         ${metric("hasTagExact", exact)}
         ${metric("matchesTagDepth", depth)}
-        ${metric("children", children.length)}
+        ${metric("redirect", redirected.getTagName() || "none")}
       </div>
       <div class="pill-list compact">${children.map((tag) => pill(tag, "parent")).join("")}</div>
     </section>
@@ -166,14 +299,14 @@ function renderFiltering(): string {
       <div class="panel-header">
         <div>
           <h2>Filter</h2>
-          <p>${state.filter}</p>
+          <p>${escapeHtml(state.filter)}</p>
         </div>
         <i data-lucide="git-branch"></i>
       </div>
       <label class="field">
         <span>Container to match</span>
         <select data-field="filter">
-          ${dictionaryTags(false).map((tag) => `<option value="${tag}" ${tag === state.filter ? "selected" : ""}>${tag}</option>`).join("")}
+          ${dictionaryTags(false).map((tag) => tagOption(tag, state.filter)).join("")}
         </select>
       </label>
       <div class="split-output">
@@ -208,7 +341,7 @@ function renderQuery(): string {
       <div class="panel-header">
         <div>
           <h2>Query</h2>
-          <p>${state.required} and not ${state.blocked}</p>
+          <p>${escapeHtml(state.required)} and not ${escapeHtml(state.blocked)}</p>
         </div>
         <i data-lucide="shield-check"></i>
       </div>
@@ -216,13 +349,13 @@ function renderQuery(): string {
         <label class="field">
           <span>Required</span>
           <select data-field="required">
-            ${dictionaryTags(false).map((tag) => `<option value="${tag}" ${tag === state.required ? "selected" : ""}>${tag}</option>`).join("")}
+            ${dictionaryTags(false).map((tag) => tagOption(tag, state.required)).join("")}
           </select>
         </label>
         <label class="field">
           <span>Blocked</span>
           <select data-field="blocked">
-            ${dictionaryTags(false).map((tag) => `<option value="${tag}" ${tag === state.blocked ? "selected" : ""}>${tag}</option>`).join("")}
+            ${dictionaryTags(false).map((tag) => tagOption(tag, state.blocked)).join("")}
           </select>
         </label>
       </div>
@@ -231,6 +364,38 @@ function renderQuery(): string {
         ${metric("exactMatchAnyTags", exactRequired.matches(container))}
         ${metric("matchNoTags", noBlocked.matches(container))}
         ${metric("expression", combined.matches(container))}
+      </div>
+    </section>
+  `;
+}
+
+function renderSourceData(): string {
+  const data = manager.getTagEditorData(state.sourceTag);
+  const redirects = manager.getGameplayTagRedirects();
+
+  return `
+    <section class="panel">
+      <div class="panel-header">
+        <div>
+          <h2>Source Data</h2>
+          <p>${escapeHtml(state.sourceTag)}</p>
+        </div>
+        <i data-lucide="database"></i>
+      </div>
+      <label class="field">
+        <span>Tag</span>
+        <select data-field="sourceTag">
+          ${dictionaryTags(false).map((tag) => tagOption(tag, state.sourceTag)).join("")}
+        </select>
+      </label>
+      <div class="metric-grid">
+        ${metric("explicit", data?.isTagExplicit ?? false)}
+        ${metric("restricted", data?.isRestrictedTag ?? false)}
+        ${metric("source", data?.firstTagSource || "implicit")}
+        ${metric("redirects", redirects.length)}
+      </div>
+      <div class="pill-list compact">
+        ${redirects.map((redirect) => pill(`${redirect.OldTagName} -> ${redirect.NewTagName}`, "parent")).join("") || pill("no redirects")}
       </div>
     </section>
   `;
@@ -250,15 +415,104 @@ function renderValidation(): string {
       </div>
       <label class="field">
         <span>Tag string</span>
-        <input data-field="validation" value="${state.validation}" />
+        <input data-field="validation" value="${escapeHtml(state.validation)}" />
       </label>
       <div class="metric-grid">
         ${metric("isValid", result.isValid)}
         ${metric("fixedString", result.fixedString || "none")}
       </div>
-      <p class="error-line">${result.error}</p>
+      <p class="error-line">${escapeHtml(result.error)}</p>
     </section>
   `;
+}
+
+function renderImportExport(): string {
+  return `
+    <section class="panel data-panel">
+      <div class="panel-header">
+        <div>
+          <h2>Import / Export</h2>
+          <p>${escapeHtml(state.importSummary)}</p>
+        </div>
+        <i data-lucide="workflow"></i>
+      </div>
+      <div class="data-toolbar">
+        <label class="field inline">
+          <span>Format</span>
+          <select data-field="dictionaryFormat">
+            <option value="json" ${state.dictionaryFormat === "json" ? "selected" : ""}>JSON</option>
+            <option value="csv" ${state.dictionaryFormat === "csv" ? "selected" : ""}>CSV</option>
+          </select>
+        </label>
+        <button data-action="export-json" title="Export JSON"><i data-lucide="file-json"></i><span>JSON</span></button>
+        <button data-action="export-csv" title="Export CSV"><i data-lucide="table-properties"></i><span>CSV</span></button>
+        <button data-action="import" title="Import dictionary"><i data-lucide="upload"></i><span>Import</span></button>
+        <button data-action="reset" title="Reset dictionary"><i data-lucide="rotate-ccw"></i><span>Reset</span></button>
+      </div>
+      <textarea data-field="dictionaryText" spellcheck="false">${escapeHtml(state.dictionaryText)}</textarea>
+      <div class="diagnostics">
+        ${renderDiagnostics()}
+      </div>
+    </section>
+  `;
+}
+
+function exportDictionary(format: GameplayTagDictionaryFormat): void {
+  state.dictionaryFormat = format;
+  state.dictionaryText = stringifyGameplayTagDictionary(manager.exportGameplayTagDictionary(), format);
+  state.diagnostics = [];
+  state.importSummary = `${format.toUpperCase()} export ready`;
+  render();
+}
+
+function importDictionary(): void {
+  try {
+    const parsed = parseGameplayTagDictionary(state.dictionaryText, state.dictionaryFormat);
+    const validation = validateGameplayTagDictionary(parsed);
+    state.diagnostics = validation.diagnostics;
+
+    if (!validation.isValid) {
+      state.importSummary = "Import blocked";
+      render();
+      return;
+    }
+
+    manager.reset();
+    const result = importGameplayTagDictionary(parsed, {
+      sourceName: "ImportedNotes",
+      sourceType: state.dictionaryFormat === "csv" ? EGameplayTagSourceType.DataTable : EGameplayTagSourceType.TagList
+    });
+    state.diagnostics = result.diagnostics;
+    state.importSummary = `Imported ${result.importedTags.num()} tags`;
+    ensureSelections();
+    exportDictionary(state.dictionaryFormat);
+  } catch (error) {
+    state.diagnostics = [{
+      level: "error",
+      code: "parse-failed",
+      message: error instanceof Error ? error.message : "Could not parse dictionary"
+    }];
+    state.importSummary = "Import failed";
+    render();
+  }
+}
+
+function handleAction(action: string): void {
+  switch (action) {
+    case "export-json":
+      exportDictionary("json");
+      break;
+    case "export-csv":
+      exportDictionary("csv");
+      break;
+    case "import":
+      importDictionary();
+      break;
+    case "reset":
+      seed();
+      render();
+      break;
+  }
 }
 
 function render(): void {
@@ -268,6 +522,8 @@ function render(): void {
     return;
   }
 
+  ensureSelections();
+
   app.innerHTML = `
     <section class="topbar">
       <div>
@@ -276,7 +532,8 @@ function render(): void {
       </div>
       <div class="summary">
         ${pill(`${state.owned.size} owned`, "strong")}
-        ${pill(`${dictionaryTags(false).length} dictionary`, "parent")}
+        ${pill(`${dictionaryTags(true).length} explicit`, "parent")}
+        ${pill(`${dictionaryTags(false).length} with parents`, "plain")}
       </div>
     </section>
     <section class="workspace">
@@ -286,7 +543,9 @@ function render(): void {
         ${renderMatching()}
         ${renderFiltering()}
         ${renderQuery()}
+        ${renderSourceData()}
         ${renderValidation()}
+        ${renderImportExport()}
       </div>
     </section>
   `;
@@ -295,21 +554,34 @@ function render(): void {
     input.addEventListener("change", () => toggleOwned(input.dataset.owned ?? ""));
   });
 
-  app.querySelectorAll<HTMLInputElement | HTMLSelectElement>("[data-field]").forEach((input) => {
+  app.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>("[data-field]").forEach((input) => {
     input.addEventListener("input", () => setState(input.dataset.field as keyof typeof state, input.value));
+  });
+
+  app.querySelectorAll<HTMLButtonElement>("[data-action]").forEach((button) => {
+    button.addEventListener("click", () => handleAction(button.dataset.action ?? ""));
   });
 
   createIcons({
     icons: {
+      ClipboardCheck,
+      Database,
+      Download,
+      FileJson,
       GitBranch,
       ListChecks,
+      RotateCcw,
       Search,
       ShieldCheck,
+      TableProperties,
       Tag,
       Tags,
+      Upload,
+      Workflow,
       X
     }
   });
 }
 
+seed();
 render();

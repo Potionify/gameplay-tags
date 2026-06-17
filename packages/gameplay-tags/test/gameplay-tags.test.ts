@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  EGameplayTagSourceType,
   BlueprintGameplayTagLibrary,
   FGameplayTag,
   FGameplayTagContainer,
@@ -7,7 +8,11 @@ import {
   FGameplayTagQueryExpression,
   GameplayTag,
   GameplayTagsManager,
+  importGameplayTagDictionary,
   makeGameplayTagContainer,
+  parseGameplayTagDictionary,
+  stringifyGameplayTagDictionary,
+  validateGameplayTagDictionary,
   requestGameplayTag
 } from "../src/index.js";
 
@@ -120,5 +125,145 @@ describe("gameplay tags", () => {
     expect(explicitOnly.hasTagExact(requestGameplayTag("Note.Status.Draft"))).toBe(true);
     expect(explicitOnly.hasTagExact(requestGameplayTag("Note.Status"))).toBe(false);
     expect(fullDictionary.hasTagExact(requestGameplayTag("Note.Status"))).toBe(true);
+  });
+
+  it("imports and exports source-aware gameplay tag dictionaries", () => {
+    const manager = GameplayTagsManager.get();
+    const result = importGameplayTagDictionary({
+      gameplayTagList: [
+        { Tag: "Note.Priority.High", DevComment: "Important note" },
+        { Tag: "Note.Priority.Low", DevComment: "Low priority note" }
+      ],
+      restrictedGameplayTagList: [
+        { Tag: "Note.Internal.Archived", DevComment: "Internal state", bAllowNonRestrictedChildren: true }
+      ],
+      gameplayTagRedirects: [
+        { OldTagName: "Note.Priority.Urgent", NewTagName: "Note.Priority.High" }
+      ]
+    }, {
+      sourceName: "Notes",
+      sourceType: EGameplayTagSourceType.TagList
+    });
+
+    expect(result.diagnostics).toEqual([]);
+    expect(result.importedTags.toJSON()).toEqual([
+      "Note.Priority.High",
+      "Note.Priority.Low",
+      "Note.Internal.Archived"
+    ]);
+    expect(manager.requestGameplayTag("Note.Priority.Urgent").getTagName()).toBe("Note.Priority.High");
+    expect(manager.isDictionaryTag("Note.Priority")).toBe(false);
+    expect(manager.isDictionaryTag("Note.Priority.High")).toBe(true);
+    expect(manager.getTagEditorData("Note.Priority.High")).toMatchObject({
+      comment: "Important note",
+      firstTagSource: "Notes",
+      isTagExplicit: true,
+      isRestrictedTag: false
+    });
+    expect(manager.getTagEditorData("Note.Internal.Archived")).toMatchObject({
+      isRestrictedTag: true,
+      allowNonRestrictedChildren: true
+    });
+
+    const exported = manager.exportGameplayTagDictionary();
+    expect(exported.gameplayTagList.some((row) => row.Tag === "Note.Priority.High")).toBe(true);
+    expect(exported.restrictedGameplayTagList).toContainEqual({
+      Tag: "Note.Internal.Archived",
+      DevComment: "Internal state",
+      bAllowNonRestrictedChildren: true
+    });
+    expect(exported.gameplayTagRedirects).toEqual([
+      { OldTagName: "Note.Priority.Urgent", NewTagName: "Note.Priority.High" }
+    ]);
+  });
+
+  it("coerces string boolean dictionary flags", () => {
+    const manager = GameplayTagsManager.get();
+    const result = importGameplayTagDictionary({
+      restrictedGameplayTagList: [
+        {
+          Tag: "Note.Flags.RestrictedFalse",
+          DevComment: "String false should stay false",
+          bAllowNonRestrictedChildren: "false" as unknown as boolean
+        }
+      ],
+      entries: [
+        {
+          tag: "Note.Flags.EntryPlain",
+          devComment: "String false should not mark the entry restricted",
+          isRestricted: "false" as unknown as boolean,
+          allowNonRestrictedChildren: "true" as unknown as boolean
+        },
+        {
+          tag: "Note.Flags.EntryRestricted",
+          devComment: "String true should mark the entry restricted",
+          isRestricted: "true" as unknown as boolean,
+          allowNonRestrictedChildren: "false" as unknown as boolean
+        }
+      ]
+    }, {
+      sourceName: "Notes",
+      sourceType: EGameplayTagSourceType.TagList
+    });
+
+    expect(result.diagnostics).toEqual([]);
+    expect(manager.getTagEditorData("Note.Flags.RestrictedFalse")).toMatchObject({
+      isRestrictedTag: true,
+      allowNonRestrictedChildren: false
+    });
+    expect(manager.getTagEditorData("Note.Flags.EntryPlain")).toMatchObject({
+      isRestrictedTag: false,
+      allowNonRestrictedChildren: false
+    });
+    expect(manager.getTagEditorData("Note.Flags.EntryRestricted")).toMatchObject({
+      isRestrictedTag: true,
+      allowNonRestrictedChildren: false
+    });
+  });
+
+  it("validates dictionary input before import", () => {
+    const validation = validateGameplayTagDictionary({
+      gameplayTagList: [
+        { Tag: "Note.Topic.Engine", DevComment: "Duplicate" },
+        { Tag: "Note.Topic.Engine", DevComment: "Duplicate again" },
+        { Tag: ".Bad,Tag.", DevComment: "Invalid" }
+      ],
+      gameplayTagRedirects: [
+        { OldTagName: "Note.Old", NewTagName: "Note.Missing" },
+        { OldTagName: "Note.Same", NewTagName: "Note.Same" }
+      ]
+    });
+
+    expect(validation.isValid).toBe(false);
+    expect(validation.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
+      "tag-duplicate",
+      "tag-invalid",
+      "redirect-target-missing",
+      "redirect-loop",
+      "redirect-target-missing"
+    ]);
+  });
+
+  it("round-trips dictionary data as csv", () => {
+    const csv = [
+      "Tag,DevComment,Restricted,bAllowNonRestrictedChildren,OldTagName,NewTagName",
+      "Note.Source.Csv,\"CSV, imported\",false,false,,",
+      "Note.Source.Restricted,Locked,true,true,,",
+      ",,,,Note.Source.Old,Note.Source.Csv"
+    ].join("\n");
+    const parsed = parseGameplayTagDictionary(csv, "csv");
+    const serialized = stringifyGameplayTagDictionary(parsed, "csv");
+
+    expect(parsed.gameplayTagList).toEqual([
+      { Tag: "Note.Source.Csv", DevComment: "CSV, imported" }
+    ]);
+    expect(parsed.restrictedGameplayTagList).toEqual([
+      { Tag: "Note.Source.Restricted", DevComment: "Locked", bAllowNonRestrictedChildren: true }
+    ]);
+    expect(parsed.gameplayTagRedirects).toEqual([
+      { OldTagName: "Note.Source.Old", NewTagName: "Note.Source.Csv" }
+    ]);
+    expect(serialized).toContain("\"CSV, imported\"");
+    expect(serialized).toContain("Note.Source.Old,Note.Source.Csv");
   });
 });
