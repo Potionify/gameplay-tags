@@ -12,4 +12,4 @@ Run these before publishing or opening a release pull request:
 npm run check
 ```
 
-Use alpha and beta npm dist-tags before publishing anything as latest. Use the manual deprecation workflow for the unscoped handoff package after it is published.
+Use alpha and beta npm dist-tags before publishing anything as latest. The Publish workflow should deprecate the unscoped handoff package automatically after real runs that include it; keep the manual deprecation workflow as a repair path.
