@@ -27,6 +27,20 @@ The public surface mirrors Unreal naming where it makes sense in JavaScript: `FG
 
 CamelCase aliases are the primary TypeScript style. Unreal-style method names remain available for one-to-one lookup from Unreal documentation.
 
+## API Mapping
+
+| Unreal-style API | TypeScript-friendly API |
+| --- | --- |
+| `FGameplayTag::RequestGameplayTag` | `requestGameplayTag` |
+| `UGameplayTagsManager::RequestGameplayTagContainer` | `requestGameplayTagContainer` |
+| `UGameplayTagsManager::AddNativeGameplayTag` | `addNativeGameplayTag` |
+| `UGameplayTagsManager::ValidateGameplayTagString` | `validateGameplayTagString` |
+| `UGameplayTagsManager::RedirectGameplayTagName` | `redirectGameplayTagName` |
+| `FGameplayTagContainer::HasTag` | `container.hasTag` |
+| `FGameplayTagContainer::FilterExact` | `container.filterExact` |
+| `FGameplayTagQuery::MakeQuery_MatchAnyTags` | `FGameplayTagQuery.makeQueryMatchAnyTags` |
+| `UBlueprintGameplayTagLibrary::HasAllTags` | `BlueprintGameplayTagLibrary.hasAllTags` |
+
 Dictionary helpers are included for tools that need to read and write gameplay tag lists:
 
 ```ts

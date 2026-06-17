@@ -1,7 +1,6 @@
 import {
   ClipboardCheck,
   Database,
-  Download,
   FileJson,
   GitBranch,
   ListChecks,
@@ -183,18 +182,54 @@ function metric(label: string, value: boolean | number | string): string {
   return `<div class="metric"><span>${escapeHtml(label)}</span><strong class="${tone}">${escapeHtml(String(value))}</strong></div>`;
 }
 
+function diagnosticCounts(diagnostics = state.diagnostics): { errors: number; warnings: number } {
+  return diagnostics.reduce((counts, diagnostic) => {
+    if (diagnostic.level === "error") {
+      counts.errors += 1;
+    } else {
+      counts.warnings += 1;
+    }
+
+    return counts;
+  }, { errors: 0, warnings: 0 });
+}
+
+function diagnosticSummary(diagnostics = state.diagnostics): string {
+  const { errors, warnings } = diagnosticCounts(diagnostics);
+  const parts = [
+    errors ? `${errors} error${errors === 1 ? "" : "s"}` : "",
+    warnings ? `${warnings} warning${warnings === 1 ? "" : "s"}` : ""
+  ].filter(Boolean);
+
+  return parts.join(", ") || "No diagnostics";
+}
+
 function renderDiagnostics(): string {
+  const { errors, warnings } = diagnosticCounts();
+  const tone = errors > 0 ? "error" : warnings > 0 ? "warning" : "ok";
+
   if (state.diagnostics.length === 0) {
-    return `<div class="diagnostic ok"><span>ok</span><strong>No diagnostics</strong></div>`;
+    return `
+      <div class="diagnostics-summary ok">
+        <span>Ready</span>
+        <strong>No diagnostics</strong>
+      </div>
+    `;
   }
 
-  return state.diagnostics.map((diagnostic) => `
-    <div class="diagnostic ${diagnostic.level}">
-      <span>${escapeHtml(diagnostic.level)} / ${escapeHtml(diagnostic.code)}</span>
-      <strong>${escapeHtml(diagnostic.message)}</strong>
-      ${diagnostic.tag ? `<em>${escapeHtml(diagnostic.tag)}</em>` : ""}
+  return `
+    <div class="diagnostics-summary ${tone}">
+      <span>${errors > 0 ? "Blocked" : "Review"}</span>
+      <strong>${escapeHtml(diagnosticSummary())}</strong>
     </div>
-  `).join("");
+    ${state.diagnostics.map((diagnostic) => `
+      <div class="diagnostic ${diagnostic.level}">
+        <span>${escapeHtml(diagnostic.level)} / ${escapeHtml(diagnostic.code)}</span>
+        <strong>${escapeHtml(diagnostic.message)}</strong>
+        ${diagnostic.tag ? `<em>${escapeHtml(diagnostic.tag)}</em>` : ""}
+      </div>
+    `).join("")}
+  `;
 }
 
 function renderDictionary(): string {
@@ -446,6 +481,7 @@ function renderImportExport(): string {
         </label>
         <button data-action="export-json" title="Export JSON"><i data-lucide="file-json"></i><span>JSON</span></button>
         <button data-action="export-csv" title="Export CSV"><i data-lucide="table-properties"></i><span>CSV</span></button>
+        <button data-action="validate" title="Validate dictionary"><i data-lucide="clipboard-check"></i><span>Validate</span></button>
         <button data-action="import" title="Import dictionary"><i data-lucide="upload"></i><span>Import</span></button>
         <button data-action="reset" title="Reset dictionary"><i data-lucide="rotate-ccw"></i><span>Reset</span></button>
       </div>
@@ -465,6 +501,26 @@ function exportDictionary(format: GameplayTagDictionaryFormat): void {
   render();
 }
 
+function validateDictionaryText(): boolean {
+  try {
+    const parsed = parseGameplayTagDictionary(state.dictionaryText, state.dictionaryFormat);
+    const validation = validateGameplayTagDictionary(parsed);
+    state.diagnostics = validation.diagnostics;
+    state.importSummary = validation.isValid ? `Valid dictionary: ${diagnosticSummary()}` : `Import blocked: ${diagnosticSummary()}`;
+    render();
+    return validation.isValid;
+  } catch (error) {
+    state.diagnostics = [{
+      level: "error",
+      code: "parse-failed",
+      message: error instanceof Error ? error.message : "Could not parse dictionary"
+    }];
+    state.importSummary = "Import failed";
+    render();
+    return false;
+  }
+}
+
 function importDictionary(): void {
   try {
     const parsed = parseGameplayTagDictionary(state.dictionaryText, state.dictionaryFormat);
@@ -472,7 +528,7 @@ function importDictionary(): void {
     state.diagnostics = validation.diagnostics;
 
     if (!validation.isValid) {
-      state.importSummary = "Import blocked";
+      state.importSummary = `Import blocked: ${diagnosticSummary()}`;
       render();
       return;
     }
@@ -483,9 +539,10 @@ function importDictionary(): void {
       sourceType: state.dictionaryFormat === "csv" ? EGameplayTagSourceType.DataTable : EGameplayTagSourceType.TagList
     });
     state.diagnostics = result.diagnostics;
-    state.importSummary = `Imported ${result.importedTags.num()} tags`;
+    state.importSummary = `Imported ${result.importedTags.num()} tags: ${diagnosticSummary()}`;
     ensureSelections();
-    exportDictionary(state.dictionaryFormat);
+    state.dictionaryText = stringifyGameplayTagDictionary(manager.exportGameplayTagDictionary(), state.dictionaryFormat);
+    render();
   } catch (error) {
     state.diagnostics = [{
       level: "error",
@@ -504,6 +561,9 @@ function handleAction(action: string): void {
       break;
     case "export-csv":
       exportDictionary("csv");
+      break;
+    case "validate":
+      validateDictionaryText();
       break;
     case "import":
       importDictionary();
@@ -566,7 +626,6 @@ function render(): void {
     icons: {
       ClipboardCheck,
       Database,
-      Download,
       FileJson,
       GitBranch,
       ListChecks,

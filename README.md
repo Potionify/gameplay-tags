@@ -79,6 +79,22 @@ const json = stringifyGameplayTagDictionary(
 
 Import results include diagnostics so applications can show duplicate tags, invalid tag strings, and redirects that point at missing tags before applying a dictionary.
 
+## API Mapping
+
+CamelCase helpers are the recommended TypeScript entry points, while Unreal-style names remain available on the classes for direct lookup from Unreal documentation.
+
+| Unreal-style API | TypeScript-friendly API |
+| --- | --- |
+| `FGameplayTag::RequestGameplayTag` | `requestGameplayTag` |
+| `UGameplayTagsManager::RequestGameplayTagContainer` | `requestGameplayTagContainer` |
+| `UGameplayTagsManager::AddNativeGameplayTag` | `addNativeGameplayTag` |
+| `UGameplayTagsManager::ValidateGameplayTagString` | `validateGameplayTagString` |
+| `UGameplayTagsManager::RedirectGameplayTagName` | `redirectGameplayTagName` |
+| `FGameplayTagContainer::HasTag` | `container.hasTag` |
+| `FGameplayTagContainer::FilterExact` | `container.filterExact` |
+| `FGameplayTagQuery::MakeQuery_MatchAnyTags` | `FGameplayTagQuery.makeQueryMatchAnyTags` |
+| `UBlueprintGameplayTagLibrary::HasAllTags` | `BlueprintGameplayTagLibrary.hasAllTags` |
+
 ## Example
 
 ```sh
