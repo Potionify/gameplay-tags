@@ -72,3 +72,23 @@ const parsed = parseGameplayTagDictionary(ini, "ini");
 ```
 
 Supported dictionary string formats are JSON, CSV, and Unreal `DefaultGameplayTags.ini`-style config rows.
+
+Gameplay tag query helpers are also included for tools that need persistent search or filter state:
+
+```ts
+import {
+  filterGameplayTagQueryMatches,
+  makeGameplayTagQueryFromFilters,
+  parseGameplayTagQuery,
+  stringifyGameplayTagQuery
+} from "@potionify/gameplay-tags";
+
+const query = makeGameplayTagQueryFromFilters({
+  anyTags: ["Note.Status"],
+  noTags: ["Character.State"],
+  exactAnyTags: ["Note.Topic.Engine"]
+});
+
+const loaded = parseGameplayTagQuery(stringifyGameplayTagQuery(query));
+const matches = filterGameplayTagQueryMatches(notes, loaded, (note) => note.tags);
+```

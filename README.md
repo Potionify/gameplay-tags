@@ -87,6 +87,30 @@ const parsed = parseGameplayTagDictionary(ini, "ini");
 
 Import results include diagnostics so applications can show duplicate tags, invalid tag strings, and redirects that point at missing tags before applying a dictionary.
 
+## Query Tools
+
+Gameplay tag queries can be built with Unreal-style constructors or persisted as JSON for application search state.
+
+```ts
+import {
+  filterGameplayTagQueryMatches,
+  makeGameplayTagQueryFromFilters,
+  parseGameplayTagQuery,
+  stringifyGameplayTagQuery
+} from "@potionify/gameplay-tags";
+
+const query = makeGameplayTagQueryFromFilters({
+  anyTags: ["Note.Status"],
+  noTags: ["Character.State"],
+  exactAnyTags: ["Note.Topic.Engine"]
+});
+
+const saved = stringifyGameplayTagQuery(query);
+const loaded = parseGameplayTagQuery(saved);
+
+const matches = filterGameplayTagQueryMatches(notes, loaded, (note) => note.tags);
+```
+
 ## API Mapping
 
 CamelCase helpers are the recommended TypeScript entry points, while Unreal-style names remain available on the classes for direct lookup from Unreal documentation.
