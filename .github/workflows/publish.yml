@@ -134,7 +134,7 @@ jobs:
               return
             fi
 
-            if npm deprecate gameplay-tags@"*" "$deprecation_message"; then
+            if npm deprecate "gameplay-tags@${published_unscoped_version}" "$deprecation_message"; then
               return
             fi
 

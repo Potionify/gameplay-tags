@@ -158,7 +158,7 @@ npm publish -w @potionify/gameplay-tags --tag alpha
 npm publish -w gameplay-tags --tag alpha
 ```
 
-The preferred publishing path is the manual GitHub Actions `Publish` workflow. It uses the repository `NPMJS_TOKEN` secret, runs `npm run check`, skips workspace versions that already exist on npm during real publish steps, publishes with provenance, automatically deprecates the unscoped handoff package only after real runs that publish `gameplay-tags`, and requires an explicit confirmation before publishing with the `latest` dist-tag.
+The preferred publishing path is the manual GitHub Actions `Publish` workflow. It uses the repository `NPMJS_TOKEN` secret, runs `npm run check`, skips workspace versions that already exist on npm during real publish steps, publishes with provenance, automatically deprecates only the newly published unscoped handoff version after real runs that publish `gameplay-tags`, and requires an explicit confirmation before publishing with the `latest` dist-tag.
 
 The `Publish` workflow has three publish modes:
 
