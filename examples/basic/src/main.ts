@@ -1663,7 +1663,8 @@ function importContainerText(): void {
     }
 
     state.owned = new Set(parsed.container.toJSON());
-    syncContainerTextFromOwned(`Imported ${parsed.container.num()} tag${parsed.container.num() === 1 ? "" : "s"} into selected actor container`);
+    ensureSelections();
+    syncContainerTextFromOwned(`Imported ${state.owned.size} tag${state.owned.size === 1 ? "" : "s"} into selected actor container`);
     render();
   } catch (error) {
     state.containerErrors = [error instanceof Error ? error.message : "Could not parse container payload"];
@@ -1777,17 +1778,8 @@ function handleAction(action: string, target?: HTMLElement): void {
 }
 
 function bindInteractions(app: HTMLElement): void {
-  app.querySelectorAll<HTMLInputElement>("[data-owned]").forEach((input) => {
+  app.querySelectorAll<HTMLInputElement>("input[data-owned]").forEach((input) => {
     input.addEventListener("change", () => toggleOwned(input.dataset.owned ?? ""));
-    input.addEventListener("click", () => {
-      if (input.tagName.toLocaleLowerCase("button") === "button") {
-        toggleOwned(input.dataset.owned ?? "");
-      }
-    });
-  });
-
-  app.querySelectorAll<HTMLButtonElement>("button[data-owned]").forEach((button) => {
-    button.addEventListener("click", () => toggleOwned(button.dataset.owned ?? ""));
   });
 
   app.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>("[data-field]").forEach((input) => {

@@ -145,10 +145,11 @@ Recommended flow:
 
 ```sh
 npm version prerelease --preid alpha --workspaces
-npm publish --workspaces --tag alpha
+npm publish --workspace @potionify/gameplay-tags --tag alpha
+npm publish --workspace gameplay-tags --tag alpha
 ```
 
-The preferred publishing path is the manual GitHub Actions `Publish` workflow. It uses the repository `NPMJS_TOKEN` secret, runs `npm run check`, skips workspace versions that already exist on npm during real publish steps, publishes with provenance, and requires an explicit confirmation before publishing with the `latest` dist-tag.
+The preferred publishing path is the manual GitHub Actions `Publish` workflow. It uses the repository `NPMJS_TOKEN` secret, runs `npm run check`, skips workspace versions that already exist on npm during real publish steps, publishes with provenance, deprecates the `gameplay-tags` handoff package when that package is published in a real run, and requires an explicit confirmation before publishing with the `latest` dist-tag.
 
 The `Publish` workflow has three publish modes:
 
