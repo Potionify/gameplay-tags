@@ -10,11 +10,13 @@ import {
   Layers3,
   Map,
   Play,
+  Plus,
   RotateCcw,
   Search,
   ShieldCheck,
   TableProperties,
   Tags,
+  Trash2,
   Upload,
   Workflow
 } from "lucide";
@@ -23,6 +25,7 @@ import {
   BlueprintGameplayTagLibrary,
   EGameplayTagSourceType,
   FGameplayTagQuery,
+  FGameplayTagQueryExpression,
   filterGameplayTagQueryMatches,
   GameplayTagDictionaryDiagnostic,
   GameplayTagDictionaryFormat,
@@ -30,10 +33,10 @@ import {
   doesGameplayTagContainerMatchQuery,
   importGameplayTagDictionary,
   makeGameplayTagContainer,
-  makeGameplayTagQueryFromFilters,
   parseGameplayTagDictionary,
   parseGameplayTagQuery,
   requestGameplayTag,
+  requestGameplayTagContainer,
   stringifyGameplayTagDictionary,
   stringifyGameplayTagQuery,
   validateGameplayTagDictionary
@@ -42,32 +45,46 @@ import "./styles.css";
 
 const seedDictionary = {
   gameplayTagList: [
-    { Tag: "Note.Status.Draft", DevComment: "Editable note" },
-    { Tag: "Note.Status.Review", DevComment: "Ready for review" },
-    { Tag: "Note.Status.Published", DevComment: "Visible to readers" },
-    { Tag: "Note.Type.Journal", DevComment: "Long-form note" },
-    { Tag: "Note.Type.Task", DevComment: "Actionable note" },
-    { Tag: "Note.Topic.Engine", DevComment: "Engine notes" },
-    { Tag: "Note.Topic.Rendering", DevComment: "Rendering notes" },
-    { Tag: "Note.Topic.Design", DevComment: "Design notes" },
-    { Tag: "Character.State.Stunned", DevComment: "Gameplay state" },
-    { Tag: "Character.State.Burning", DevComment: "Gameplay state" }
+    { Tag: "Ability.Element.Fire", DevComment: "Fire damage and spell effects" },
+    { Tag: "Ability.Element.Frost", DevComment: "Frost damage and slow effects" },
+    { Tag: "Ability.Range.Melee", DevComment: "Close-range ability" },
+    { Tag: "Ability.Range.Ranged", DevComment: "Long-range ability" },
+    { Tag: "Ability.Type.Attack", DevComment: "Hostile combat action" },
+    { Tag: "Ability.Type.Heal", DevComment: "Friendly recovery action" },
+    { Tag: "Character.Class.Mage", DevComment: "Arcane character archetype" },
+    { Tag: "Character.Class.Ranger", DevComment: "Ranged character archetype" },
+    { Tag: "Character.Class.Warrior", DevComment: "Frontline character archetype" },
+    { Tag: "Character.State.Burning", DevComment: "Damage-over-time combat state" },
+    { Tag: "Character.State.Stunned", DevComment: "Crowd-control combat state" },
+    { Tag: "Encounter.Region.Catacombs", DevComment: "Underground dungeon region" }
   ],
   restrictedGameplayTagList: [
-    { Tag: "Note.Internal.Archived", DevComment: "Hidden archive state", bAllowNonRestrictedChildren: true }
+    { Tag: "Character.Internal.DebugOnly", DevComment: "Designer-only test state", bAllowNonRestrictedChildren: true }
   ],
   gameplayTagRedirects: [
-    { OldTagName: "Note.Status.ReadyForReview", NewTagName: "Note.Status.Review" }
+    { OldTagName: "Character.State.OnFire", NewTagName: "Character.State.Burning" }
   ]
 };
 
 const manager = GameplayTagsManager.get();
 
-const sampleNotes = [
-  { title: "Draft engine note", tags: ["Note.Status.Draft", "Note.Topic.Engine", "Note.Type.Task"] },
-  { title: "Published rendering note", tags: ["Note.Status.Published", "Note.Topic.Rendering", "Note.Type.Journal"] },
-  { title: "Design review checklist", tags: ["Note.Status.Review", "Note.Topic.Design", "Note.Type.Task"] },
-  { title: "Character state note", tags: ["Character.State.Stunned", "Note.Topic.Engine"] }
+const sampleEncounters = [
+  {
+    title: "Ashfall pyromancer",
+    tags: ["Character.Class.Mage", "Ability.Element.Fire", "Ability.Range.Ranged", "Ability.Type.Attack"]
+  },
+  {
+    title: "Frost keep guardian",
+    tags: ["Character.Class.Warrior", "Ability.Element.Frost", "Ability.Range.Melee", "Ability.Type.Attack"]
+  },
+  {
+    title: "Moonwell ranger",
+    tags: ["Character.Class.Ranger", "Ability.Range.Ranged", "Ability.Type.Heal", "Encounter.Region.Catacombs"]
+  },
+  {
+    title: "Stunned arena champion",
+    tags: ["Character.Class.Warrior", "Character.State.Stunned", "Ability.Range.Melee"]
+  }
 ];
 
 type GuideStep = {
@@ -81,31 +98,99 @@ type GuideStep = {
   output: () => string;
 };
 
+type QueryRootMode = "allExpr" | "anyExpr" | "noExpr";
+
+type QueryRuleType = "anyTags" | "allTags" | "noTags" | "anyTagsExact" | "allTagsExact";
+
+type QueryRule = {
+  id: string;
+  tags: string[];
+  type: QueryRuleType;
+};
+
+const queryRootModes: Record<QueryRootMode, { label: string; method: string; expression: string }> = {
+  allExpr: {
+    label: "All rules must pass",
+    method: "allExprMatch",
+    expression: "AllExprMatch"
+  },
+  anyExpr: {
+    label: "Any rule can pass",
+    method: "anyExprMatch",
+    expression: "AnyExprMatch"
+  },
+  noExpr: {
+    label: "No rule may pass",
+    method: "noExprMatch",
+    expression: "NoExprMatch"
+  }
+};
+
+const queryRuleTypes: Record<QueryRuleType, { label: string; method: string; expression: string }> = {
+  anyTags: {
+    label: "Any tag matches",
+    method: "anyTagsMatch",
+    expression: "AnyTagsMatch"
+  },
+  allTags: {
+    label: "All tags match",
+    method: "allTagsMatch",
+    expression: "AllTagsMatch"
+  },
+  noTags: {
+    label: "No tags match",
+    method: "noTagsMatch",
+    expression: "NoTagsMatch"
+  },
+  anyTagsExact: {
+    label: "Any exact tag matches",
+    method: "anyTagsExactMatch",
+    expression: "AnyTagsExactMatch"
+  },
+  allTagsExact: {
+    label: "All exact tags match",
+    method: "allTagsExactMatch",
+    expression: "AllTagsExactMatch"
+  }
+};
+
 const state = {
-  owned: new Set(["Note.Status.Draft", "Note.Topic.Engine", "Note.Type.Task"]),
-  filter: "Note",
-  required: "Note.Status",
-  blocked: "Character.State",
-  exact: "Note.Topic.Engine",
-  validation: " .Note.Bad,Tag. ",
-  sourceTag: "Note.Status.Draft",
+  owned: new Set(["Ability.Element.Fire", "Ability.Range.Ranged", "Character.Class.Mage"]),
+  filter: "Ability",
+  required: "Ability.Element",
+  exact: "Character.Class.Mage",
+  validation: " .Ability.Bad,Tag. ",
+  sourceTag: "Ability.Element.Fire",
+  queryRoot: "allExpr" as QueryRootMode,
+  queryRules: [
+    { id: "rule-1", type: "anyTags", tags: ["Ability.Element.Fire", "Ability.Element.Frost"] },
+    { id: "rule-2", type: "allTags", tags: ["Ability.Range.Ranged", "Character.Class.Mage"] },
+    { id: "rule-3", type: "noTags", tags: ["Character.State.Stunned", "Character.State.Burning"] },
+    { id: "rule-4", type: "anyTagsExact", tags: ["Character.Class.Mage", "Character.Class.Ranger"] }
+  ] as QueryRule[],
   dictionaryFormat: "json" as GameplayTagDictionaryFormat,
   dictionaryText: "",
   diagnostics: [] as GameplayTagDictionaryDiagnostic[],
-  importSummary: "Seed dictionary loaded"
+  importSummary: "Seed dictionary loaded",
+  containerText: "",
+  containerSummary: "Selected actor container loaded",
+  containerErrors: [] as string[]
 };
+
+let nextQueryRuleId = 5;
 
 function seed(): void {
   manager.reset();
   importGameplayTagDictionary(seedDictionary, {
-    sourceName: "ExampleNotes",
+    sourceName: "ExampleRpgTags",
     sourceType: EGameplayTagSourceType.TagList,
-    restrictedSourceName: "ExampleRestricted"
+    restrictedSourceName: "ExampleDesignerOnly"
   });
   state.dictionaryText = stringifyGameplayTagDictionary(manager.exportGameplayTagDictionary(), state.dictionaryFormat);
   state.diagnostics = [];
   state.importSummary = "Seed dictionary loaded";
   ensureSelections();
+  syncContainerTextFromOwned("Selected actor container loaded");
 }
 
 function escapeHtml(value: unknown): string {
@@ -134,7 +219,7 @@ function firstTag(fallback = ""): string {
 function ensureSelections(): void {
   const allTags = new Set(dictionaryTags(false));
   const explicitTags = new Set(dictionaryTags(true));
-  const fallback = firstTag("Note");
+  const fallback = firstTag("Ability");
 
   for (const tag of [...state.owned]) {
     if (!explicitTags.has(tag)) {
@@ -150,15 +235,44 @@ function ensureSelections(): void {
     }
   }
 
-  for (const key of ["required", "blocked", "exact", "filter", "sourceTag"] as const) {
+  for (const key of ["required", "exact", "filter", "sourceTag"] as const) {
     if (!allTags.has(state[key])) {
       state[key] = fallback;
+    }
+  }
+
+  if (state.queryRules.length === 0) {
+    state.queryRules.push({ id: `rule-${nextQueryRuleId++}`, type: "anyTags", tags: [fallback] });
+  }
+
+  for (const rule of state.queryRules) {
+    rule.tags = [...new Set(rule.tags.filter((tag) => allTags.has(tag)))];
+
+    if (rule.tags.length === 0) {
+      rule.tags = [fallback];
     }
   }
 }
 
 function ownedContainer() {
   return makeGameplayTagContainer([...state.owned]);
+}
+
+function selectedContainerPayload(container = ownedContainer()): { actorId: string; gameplayTags: string[] } {
+  return {
+    actorId: "ashfall-pyromancer",
+    gameplayTags: container.toJSON()
+  };
+}
+
+function stringifySelectedContainer(container = ownedContainer()): string {
+  return JSON.stringify(selectedContainerPayload(container), null, 2);
+}
+
+function syncContainerTextFromOwned(summary: string): void {
+  state.containerText = stringifySelectedContainer();
+  state.containerSummary = summary;
+  state.containerErrors = [];
 }
 
 function sourceTypeForFormat(format: GameplayTagDictionaryFormat): EGameplayTagSourceType {
@@ -173,6 +287,18 @@ function sourceTypeForFormat(format: GameplayTagDictionaryFormat): EGameplayTagS
   return EGameplayTagSourceType.TagList;
 }
 
+function sourceTypeMemberForFormat(format: GameplayTagDictionaryFormat): string {
+  if (format === "csv") {
+    return "DataTable";
+  }
+
+  if (format === "ini") {
+    return "DefaultTagList";
+  }
+
+  return "TagList";
+}
+
 function toggleOwned(tag: string): void {
   if (state.owned.has(tag)) {
     state.owned.delete(tag);
@@ -180,6 +306,79 @@ function toggleOwned(tag: string): void {
     state.owned.add(tag);
   }
 
+  syncContainerTextFromOwned("Selected actor container updated");
+  render();
+}
+
+function addQueryRule(): void {
+  state.queryRules.push({
+    id: `rule-${nextQueryRuleId++}`,
+    type: "anyTags",
+    tags: [firstTag("Ability")]
+  });
+  ensureSelections();
+  render();
+}
+
+function removeQueryRule(ruleId: string): void {
+  if (state.queryRules.length === 1) {
+    return;
+  }
+
+  state.queryRules = state.queryRules.filter((rule) => rule.id !== ruleId);
+  ensureSelections();
+  render();
+}
+
+function addQueryRuleTag(ruleId: string): void {
+  const rule = state.queryRules.find((candidate) => candidate.id === ruleId);
+
+  if (!rule) {
+    return;
+  }
+
+  const nextTag = dictionaryTags(false).find((tag) => !rule.tags.includes(tag)) ?? firstTag("Ability");
+  rule.tags.push(nextTag);
+  ensureSelections();
+  render();
+}
+
+function removeQueryRuleTag(ruleId: string, tagIndex: number): void {
+  const rule = state.queryRules.find((candidate) => candidate.id === ruleId);
+
+  if (!rule || rule.tags.length === 1 || !Number.isInteger(tagIndex)) {
+    return;
+  }
+
+  rule.tags = rule.tags.filter((_, index) => index !== tagIndex);
+  ensureSelections();
+  render();
+}
+
+function updateQueryRule(ruleId: string, field: "type", value: string): void {
+  const rule = state.queryRules.find((candidate) => candidate.id === ruleId);
+
+  if (!rule) {
+    return;
+  }
+
+  if (field === "type" && value in queryRuleTypes) {
+    rule.type = value as QueryRuleType;
+  }
+
+  ensureSelections();
+  render();
+}
+
+function updateQueryRuleTag(ruleId: string, tagIndex: number, value: string): void {
+  const rule = state.queryRules.find((candidate) => candidate.id === ruleId);
+
+  if (!rule || !Number.isInteger(tagIndex) || tagIndex < 0 || tagIndex >= rule.tags.length) {
+    return;
+  }
+
+  rule.tags[tagIndex] = value;
+  ensureSelections();
   render();
 }
 
@@ -190,8 +389,19 @@ function setState(key: keyof typeof state, value: string): void {
     return;
   }
 
+  if (key === "queryRoot") {
+    state.queryRoot = value as QueryRootMode;
+    render();
+    return;
+  }
+
   if (key === "dictionaryText") {
     state.dictionaryText = value;
+    return;
+  }
+
+  if (key === "containerText") {
+    state.containerText = value;
     return;
   }
 
@@ -214,6 +424,35 @@ function metric(label: string, value: boolean | number | string): string {
 
 function codeBlock(code: string): string {
   return `<pre class="code-block"><code>${escapeHtml(code.trim())}</code></pre>`;
+}
+
+function consoleValue(value: unknown): string {
+  if (typeof value === "string") {
+    return value;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+
+  if (value === null || value === undefined) {
+    return String(value);
+  }
+
+  return JSON.stringify(value, null, 2);
+}
+
+function consoleOutput(entries: Array<[string, unknown]>): string {
+  return `
+    <div class="console-panel">
+      ${entries.map(([label, value]) => `
+        <div class="console-entry">
+          <span>console.log("${escapeHtml(label)}")</span>
+          <pre><code>${escapeHtml(consoleValue(value))}</code></pre>
+        </div>
+      `).join("")}
+    </div>
+  `;
 }
 
 function miniCode(code: string): string {
@@ -293,7 +532,7 @@ function renderTreeNode(name: string, value: unknown, depth = 0, path = name): s
 
   return `
     <li style="--depth:${depth}">
-      <button class="tree-node ${explicit ? "explicit" : "parent"} ${owned ? "selected" : ""}" data-owned="${escapeHtml(path)}" ${explicit ? "" : "disabled"}>
+      <button class="tree-node ${explicit ? "explicit" : "parent"} ${owned ? "selected" : ""}" type="button" disabled>
         <span>${escapeHtml(name)}</span>
         ${explicit ? "<small>explicit</small>" : "<small>parent</small>"}
       </button>
@@ -326,45 +565,193 @@ function renderContainerVisual(): string {
   `;
 }
 
-function renderQueryVisual(): string {
-  const container = ownedContainer();
-  const required = makeGameplayTagContainer([state.required]);
-  const blocked = makeGameplayTagContainer([state.blocked]);
-  const exact = makeGameplayTagContainer([state.exact]);
-  const query = makeGameplayTagQueryFromFilters({
-    anyTags: required,
-    noTags: blocked,
-    exactAnyTags: exact,
-    description: `${state.required} + exact ${state.exact} and not ${state.blocked}`
-  });
-  const matchingNotes = filterGameplayTagQueryMatches(sampleNotes, query, (note) => note.tags);
+function queryExpressionForRule(rule: QueryRule): FGameplayTagQueryExpression {
+  const expression = new FGameplayTagQueryExpression();
+  const tags = makeGameplayTagContainer(rule.tags);
 
+  switch (rule.type) {
+    case "anyTags":
+      return expression.anyTagsMatch().addTags(tags);
+    case "allTags":
+      return expression.allTagsMatch().addTags(tags);
+    case "noTags":
+      return expression.noTagsMatch().addTags(tags);
+    case "anyTagsExact":
+      return expression.anyTagsExactMatch().addTags(tags);
+    case "allTagsExact":
+      return expression.allTagsExactMatch().addTags(tags);
+  }
+}
+
+function queryRootExpression(): FGameplayTagQueryExpression {
+  const root = new FGameplayTagQueryExpression();
+
+  switch (state.queryRoot) {
+    case "anyExpr":
+      root.anyExprMatch();
+      break;
+    case "noExpr":
+      root.noExprMatch();
+      break;
+    case "allExpr":
+      root.allExprMatch();
+      break;
+  }
+
+  for (const rule of state.queryRules) {
+    root.addExpr(queryExpressionForRule(rule));
+  }
+
+  return root;
+}
+
+function buildCustomQuery(): FGameplayTagQuery {
+  return FGameplayTagQuery.buildQuery(queryRootExpression(), "RPG encounter query");
+}
+
+function evaluateQueryRule(rule: QueryRule): boolean {
+  const container = ownedContainer();
+  const tags = makeGameplayTagContainer(rule.tags);
+
+  switch (rule.type) {
+    case "anyTags":
+      return container.hasAny(tags);
+    case "allTags":
+      return container.hasAll(tags);
+    case "noTags":
+      return !container.hasAny(tags);
+    case "anyTagsExact":
+      return container.hasAnyExact(tags);
+    case "allTagsExact":
+      return container.hasAllExact(tags);
+  }
+}
+
+function queryRuleSnapshot(): Array<Record<string, boolean | number | string | string[]>> {
+  return state.queryRules.map((rule, index) => ({
+    index: index + 1,
+    expression: queryRuleTypes[rule.type].expression,
+    tagContainer: rule.tags,
+    result: evaluateQueryRule(rule)
+  }));
+}
+
+function rootModeOptions(): string {
+  return (Object.entries(queryRootModes) as Array<[QueryRootMode, typeof queryRootModes[QueryRootMode]]>)
+    .map(([value, config]) => `<option value="${value}" ${state.queryRoot === value ? "selected" : ""}>${escapeHtml(config.label)}</option>`)
+    .join("");
+}
+
+function ruleTypeOptions(selected: QueryRuleType): string {
+  return (Object.entries(queryRuleTypes) as Array<[QueryRuleType, typeof queryRuleTypes[QueryRuleType]]>)
+    .map(([value, config]) => `<option value="${value}" ${selected === value ? "selected" : ""}>${escapeHtml(config.label)}</option>`)
+    .join("");
+}
+
+function queryRuleCode(): string {
+  return state.queryRules.map((rule) => `
+root.addExpr(new FGameplayTagQueryExpression()
+  .${queryRuleTypes[rule.type].method}()
+  .addTags(makeGameplayTagContainer([
+    ${rule.tags.map((tag) => JSON.stringify(tag)).join(",\n    ")}
+  ])));`).join("\n");
+}
+
+function renderQueryRuleTagItem(rule: QueryRule, tag: string, tagIndex: number): string {
   return `
-    <div class="query-map">
-      ${renderQueryNode("Any tag", state.required, container.hasAny(required))}
-      ${renderQueryNode("Exact tag", state.exact, container.hasAnyExact(exact))}
-      ${renderQueryNode("No tag", state.blocked, !container.hasAny(blocked))}
-      <div class="query-result ${query.matches(container) ? "yes" : "no"}">
-        <span>Combined query</span>
-        <strong>${query.matches(container) ? "matches" : "blocked"}</strong>
-      </div>
-    </div>
-    <div class="note-results">
-      ${matchingNotes.map((note) => `
-        <div class="note-row">
-          <strong>${escapeHtml(note.title)}</strong>
-          <span>${note.tags.map((tag) => escapeHtml(tag)).join(" / ")}</span>
-        </div>
-      `).join("") || `<div class="note-row"><strong>No notes matched</strong><span>Adjust the selectors below.</span></div>`}
+    <div class="query-tag-item">
+      <label class="field">
+        <span class="visually-hidden">Query rule tag ${tagIndex + 1}</span>
+        <select aria-label="Query rule tag ${tagIndex + 1}" data-query-rule-id="${escapeHtml(rule.id)}" data-query-rule-tag-index="${tagIndex}">
+          ${dictionaryTags(false).map((option) => tagOption(option, tag)).join("")}
+        </select>
+      </label>
+      <button class="icon-button query-tag-remove" data-action="remove-query-rule-tag" data-query-rule-id="${escapeHtml(rule.id)}" data-query-rule-tag-index="${tagIndex}" title="Remove tag from container" ${rule.tags.length === 1 ? "disabled" : ""}>
+        <i data-lucide="trash-2"></i>
+      </button>
     </div>
   `;
 }
 
-function renderQueryNode(label: string, tag: string, matched: boolean): string {
+function renderQueryRuleBuilder(): string {
+  return `
+    <div class="query-builder-panel">
+      <div class="query-builder-header">
+        <label class="field">
+          <span>Root expression</span>
+          <select data-field="queryRoot">
+            ${rootModeOptions()}
+          </select>
+        </label>
+        <button data-action="add-query-rule" title="Add query rule"><i data-lucide="plus"></i><span>Add rule</span></button>
+      </div>
+      <div class="query-rule-list">
+        ${state.queryRules.map((rule, index) => `
+          <div class="query-rule-row">
+            <span class="query-rule-index">${index + 1}</span>
+            <label class="field">
+              <span>Rule type</span>
+              <select data-query-rule-id="${escapeHtml(rule.id)}" data-query-rule-field="type">
+                ${ruleTypeOptions(rule.type)}
+              </select>
+            </label>
+            <div class="query-tag-container-field">
+              <div class="query-tag-container-header">
+                <span>Tag container</span>
+                <button data-action="add-query-rule-tag" data-query-rule-id="${escapeHtml(rule.id)}" title="Add tag to container"><i data-lucide="plus"></i><span>Add tag</span></button>
+              </div>
+              <div class="query-tag-list">
+                ${rule.tags.map((tag, tagIndex) => renderQueryRuleTagItem(rule, tag, tagIndex)).join("")}
+              </div>
+            </div>
+            <button class="icon-button query-rule-remove" data-action="remove-query-rule" data-query-rule-id="${escapeHtml(rule.id)}" title="Remove query rule" ${state.queryRules.length === 1 ? "disabled" : ""}>
+              <i data-lucide="trash-2"></i>
+            </button>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderQueryVisual(): string {
+  const query = buildCustomQuery();
+  const containerMatches = query.matches(ownedContainer());
+  const matchingEncounters = filterGameplayTagQueryMatches(sampleEncounters, query, (encounter) => encounter.tags);
+
+  return `
+    ${renderQueryRuleBuilder()}
+    <div class="query-expression-map">
+      <div class="query-root-node ${containerMatches ? "yes" : "no"}">
+        <span>Root expression</span>
+        <strong>${escapeHtml(queryRootModes[state.queryRoot].expression)}</strong>
+        <em>${state.queryRules.length} child expression${state.queryRules.length === 1 ? "" : "s"}</em>
+      </div>
+      <div class="query-rule-graph">
+        ${state.queryRules.map((rule) => renderQueryNode(queryRuleTypes[rule.type].expression, rule.tags, evaluateQueryRule(rule))).join("")}
+      </div>
+      <div class="query-result ${containerMatches ? "yes" : "no"}">
+        <span>Runtime query</span>
+        <strong>${containerMatches ? "matches selected actor" : "blocked selected actor"}</strong>
+      </div>
+    </div>
+    <div class="record-results">
+      ${matchingEncounters.map((encounter) => `
+        <div class="record-row">
+          <strong>${escapeHtml(encounter.title)}</strong>
+          <span>${encounter.tags.map((tag) => escapeHtml(tag)).join(" / ")}</span>
+        </div>
+      `).join("") || `<div class="record-row"><strong>No encounters matched</strong><span>Adjust the query rules above.</span></div>`}
+    </div>
+  `;
+}
+
+function renderQueryNode(label: string, tags: string[], matched: boolean): string {
   return `
     <div class="query-node ${matched ? "yes" : "no"}">
       <span>${escapeHtml(label)}</span>
-      <strong>${escapeHtml(tag)}</strong>
+      <strong>Tag container (${tags.length})</strong>
+      <div class="pill-list">${tags.map((tag) => pill(tag, "strong")).join("")}</div>
       <em>${matched ? "pass" : "fail"}</em>
     </div>
   `;
@@ -390,6 +777,165 @@ function renderDictionaryPreview(): string {
           </button>
         `).join("")}
       </div>
+    </div>
+  `;
+}
+
+function renderImportModel(): string {
+  return `
+    <div class="surface-model" aria-label="Import model">
+      <div class="surface-node">
+        <span>Registry dictionary</span>
+        <strong>Global catalog</strong>
+        <p>Valid tags, comments, redirects, restricted entries, and source metadata.</p>
+      </div>
+      <div class="surface-node">
+        <span>GameplayTagContainer</span>
+        <strong>Runtime tag set</strong>
+        <p>Actor, item, ability, encounter, save data, or any app payload carrying tags.</p>
+      </div>
+    </div>
+  `;
+}
+
+function renderContainerDiagnostics(): string {
+  if (state.containerErrors.length === 0) {
+    return `
+      <div class="diagnostics-summary ok">
+        <span>Ready</span>
+        <strong>${escapeHtml(state.containerSummary)}</strong>
+      </div>
+    `;
+  }
+
+  return `
+    <div class="diagnostics-summary error">
+      <span>Blocked</span>
+      <strong>${escapeHtml(state.containerSummary)}</strong>
+    </div>
+    ${state.containerErrors.map((error) => `
+      <div class="diagnostic error">
+        <span>container</span>
+        <strong>${escapeHtml(error)}</strong>
+      </div>
+    `).join("")}
+  `;
+}
+
+function renderContainerEditor(): string {
+  return `
+    <div class="data-editor container-editor">
+      <div class="data-toolbar">
+        <button data-action="validate-container" title="Validate container payload"><i data-lucide="clipboard-check"></i><span>Validate</span></button>
+        <button data-action="import-container" title="Import container payload"><i data-lucide="upload"></i><span>Import container</span></button>
+        <button data-action="export-container" title="Export selected actor container"><i data-lucide="file-json"></i><span>Use selected actor</span></button>
+      </div>
+      <textarea data-field="containerText" spellcheck="false">${escapeHtml(state.containerText)}</textarea>
+      <div class="diagnostics">${renderContainerDiagnostics()}</div>
+    </div>
+  `;
+}
+
+function renderImportSurfaces(): string {
+  return `
+    ${renderImportModel()}
+    <div class="data-surface-grid">
+      <div class="data-surface">
+        <div class="surface-copy">
+          <span>Dictionary input</span>
+          <strong>Change the global registry catalog</strong>
+          <p>Use this for tool dictionaries and Unreal-style config/table data that define which tags exist.</p>
+        </div>
+        ${renderRegistryEditor()}
+      </div>
+      <div class="data-surface">
+        <div class="surface-copy">
+          <span>Container input</span>
+          <strong>Load tags for one RPG object</strong>
+          <p>Paste a JSON tag array or an app object with <code>gameplayTags</code> or <code>tags</code>.</p>
+        </div>
+        ${renderContainerEditor()}
+      </div>
+    </div>
+  `;
+}
+
+function renderContainerExportPreview(): string {
+  const container = ownedContainer();
+
+  return `
+    <div class="container-export-preview">
+      <div class="metric-grid compact">
+        ${metric("container tags", container.num())}
+        ${metric("json shape", "gameplayTags[]")}
+      </div>
+      <div class="pill-list">${container.toJSON().map((tag) => pill(tag, "strong")).join("")}</div>
+      <button data-action="export-container" title="Export selected actor container"><i data-lucide="file-json"></i><span>Export selected container</span></button>
+    </div>
+  `;
+}
+
+function renderExportSurfaces(): string {
+  return `
+    <div class="data-surface-grid export-grid">
+      <div class="data-surface">
+        <div class="surface-copy">
+          <span>Dictionary export</span>
+          <strong>Write the global catalog</strong>
+          <p>JSON, CSV, and INI formats preserve tag lists, restricted tags, redirects, and editor metadata.</p>
+        </div>
+        ${renderDictionaryPreview()}
+      </div>
+      <div class="data-surface">
+        <div class="surface-copy">
+          <span>Container export</span>
+          <strong>Write a runtime tag set</strong>
+          <p>Containers serialize cleanly as arrays, so game payloads can store tags beside actor or item data.</p>
+        </div>
+        ${renderContainerExportPreview()}
+      </div>
+    </div>
+  `;
+}
+
+function registryCounts(): Record<string, number> {
+  const exportShape = manager.exportGameplayTagDictionary();
+
+  return {
+    gameplayTagList: exportShape.gameplayTagList.length,
+    restrictedGameplayTagList: exportShape.restrictedGameplayTagList.length,
+    gameplayTagRedirects: exportShape.gameplayTagRedirects.length,
+    allTagsWithParents: dictionaryTags(false).length
+  };
+}
+
+function diagnosticsForConsole(): Array<Record<string, string | undefined>> {
+  return state.diagnostics.map((diagnostic) => ({
+    level: diagnostic.level,
+    code: diagnostic.code,
+    tag: diagnostic.tag,
+    message: diagnostic.message
+  }));
+}
+
+function renderRegistryEditor(): string {
+  return `
+    <div class="data-editor">
+      <div class="data-toolbar">
+        <label class="field inline">
+          <span>Input format</span>
+          <select data-field="dictionaryFormat">
+            <option value="json" ${state.dictionaryFormat === "json" ? "selected" : ""}>JSON</option>
+            <option value="csv" ${state.dictionaryFormat === "csv" ? "selected" : ""}>CSV</option>
+            <option value="ini" ${state.dictionaryFormat === "ini" ? "selected" : ""}>INI</option>
+          </select>
+        </label>
+        <button data-action="validate" title="Validate dictionary"><i data-lucide="clipboard-check"></i><span>Validate</span></button>
+        <button data-action="import" title="Import dictionary"><i data-lucide="upload"></i><span>Import catalog</span></button>
+        <button data-action="reset" title="Reset dictionary"><i data-lucide="rotate-ccw"></i><span>Reset catalog</span></button>
+      </div>
+      <textarea data-field="dictionaryText" spellcheck="false">${escapeHtml(state.dictionaryText)}</textarea>
+      <div class="diagnostics">${renderDiagnostics()}</div>
     </div>
   `;
 }
@@ -428,48 +974,30 @@ function renderSelector(label: string, field: keyof typeof state, value: string)
   `;
 }
 
-function renderLiveControls(): string {
+function renderOwnedTagPicker(): string {
   const explicit = dictionaryTags(true);
 
   return `
-    <section class="guide-section workbench" id="live-workbench">
-      <div class="section-heading">
-        <span class="section-kicker">Interactive examples</span>
-        <h2>Change the tags and watch every example update.</h2>
-        <p>The guide uses the real package APIs. The selected note tags below feed the container, matching, filtering, query, and dictionary examples on the page.</p>
+    <div class="tag-picker">
+      <div>
+        <h3>Selected RPG tags</h3>
+        <p>${explicit.length} explicit tags from the seed RPG dictionary. Toggle the tags carried by the sample actor.</p>
       </div>
-      <div class="workbench-layout">
-        <div class="dictionary-rail">
-          <h3>Dictionary</h3>
-          <p>${explicit.length} explicit tags from the seed note-app dictionary.</p>
-          <div class="tag-list">
-            ${explicit.map((tag) => {
-              const data = manager.getTagEditorData(tag);
-              return `
-                <label class="tag-row">
-                  <input type="checkbox" data-owned="${escapeHtml(tag)}" ${state.owned.has(tag) ? "checked" : ""} />
-                  <span>
-                    <strong>${escapeHtml(tag)}</strong>
-                    <em>${escapeHtml(data?.isRestrictedTag ? "restricted" : data?.firstTagSource || "dictionary")}</em>
-                  </span>
-                </label>
-              `;
-            }).join("")}
-          </div>
-        </div>
-        <div class="controls-grid">
-          ${renderSelector("Match against", "required", state.required)}
-          ${renderSelector("Exact tag", "exact", state.exact)}
-          ${renderSelector("Blocked tag", "blocked", state.blocked)}
-          ${renderSelector("Filter by", "filter", state.filter)}
-          ${renderSelector("Source data", "sourceTag", state.sourceTag)}
-          <label class="field">
-            <span>Validate string</span>
-            <input data-field="validation" value="${escapeHtml(state.validation)}" />
-          </label>
-        </div>
+      <div class="tag-list">
+        ${explicit.map((tag) => {
+          const data = manager.getTagEditorData(tag);
+          return `
+            <label class="tag-row">
+              <input type="checkbox" data-owned="${escapeHtml(tag)}" ${state.owned.has(tag) ? "checked" : ""} />
+              <span>
+                <strong>${escapeHtml(tag)}</strong>
+                <em>${escapeHtml(data?.isRestrictedTag ? "restricted" : data?.firstTagSource || "dictionary")}</em>
+              </span>
+            </label>
+          `;
+        }).join("")}
       </div>
-    </section>
+    </div>
   `;
 }
 
@@ -477,8 +1005,8 @@ function installStep(): GuideStep {
   return {
     id: "install",
     kicker: "Start",
-    title: "Install the scoped package.",
-    summary: "Use the scoped package for application code. The unscoped package only exists as a handoff for accidental installs.",
+    title: "Install the package.",
+    summary: "Add the runtime to tools that need Unreal-style tag matching, dictionary import/export, and query persistence.",
     icon: "book-open",
     code: () => `
 npm install @potionify/gameplay-tags@beta
@@ -495,14 +1023,53 @@ import {
         ${pill("camelCase helpers", "plain")}
       </div>
     `,
-    output: () => `
-      <div class="metric-grid compact">
-        ${metric("package", "@potionify/gameplay-tags")}
-        ${metric("dist-tag", "beta")}
-        ${metric("module", "ESM/CJS")}
-        ${metric("example", "GitHub Pages")}
-      </div>
-    `
+    output: () => consoleOutput([
+      ["packageName", "@potionify/gameplay-tags"],
+      ["distTag", "beta"],
+      ["moduleFormats", ["ESM", "CJS"]],
+      ["exampleRuntime", "Vite / GitHub Pages"]
+    ])
+  };
+}
+
+function registryInputStep(): GuideStep {
+  return {
+    id: "registry-input",
+    kicker: "Input surfaces",
+    title: "Import dictionaries and containers.",
+    summary: "A dictionary is the global catalog of valid RPG tags. A GameplayTagContainer is the tag set carried by a specific actor, item, ability, save row, or query input.",
+    icon: "upload",
+    code: () => `
+const parsed = parseGameplayTagDictionary(
+  registryText,
+  "${state.dictionaryFormat}"
+);
+
+const validation = validateGameplayTagDictionary(parsed);
+
+if (validation.isValid) {
+  manager.reset();
+  importGameplayTagDictionary(parsed, {
+    sourceName: "ImportedRpgTags",
+    sourceType: EGameplayTagSourceType.${sourceTypeMemberForFormat(state.dictionaryFormat)}
+  });
+}
+
+const containerPayload = JSON.parse(actorPayloadText);
+const selectedActor = requestGameplayTagContainer(
+  containerPayload.gameplayTags,
+  undefined,
+  false
+);`,
+    visual: renderImportSurfaces,
+    output: () => consoleOutput([
+      ["dictionaryImportSummary", state.importSummary],
+      ["dictionaryInputFormat", state.dictionaryFormat],
+      ["dictionaryDiagnostics", diagnosticsForConsole()],
+      ["registryCounts", registryCounts()],
+      ["containerImportSummary", state.containerSummary],
+      ["selectedActorContainer.toJSON()", ownedContainer().toJSON()]
+    ])
   };
 }
 
@@ -510,7 +1077,7 @@ function dictionaryStep(): GuideStep {
   return {
     id: "dictionary",
     kicker: "Recipe 1",
-    title: "Load a tag dictionary from note-app data.",
+    title: "Load a tag dictionary from RPG data.",
     summary: "The manager keeps explicit tags, restricted tags, redirects, source metadata, and implicit parent nodes in one place.",
     icon: "database",
     code: () => `
@@ -518,9 +1085,9 @@ const manager = GameplayTagsManager.get();
 
 manager.reset();
 importGameplayTagDictionary(seedDictionary, {
-  sourceName: "ExampleNotes",
+  sourceName: "ExampleRpgTags",
   sourceType: EGameplayTagSourceType.TagList,
-  restrictedSourceName: "ExampleRestricted"
+  restrictedSourceName: "ExampleDesignerOnly"
 });
 
 const exported = manager.exportGameplayTagDictionary();`,
@@ -529,14 +1096,12 @@ const exported = manager.exportGameplayTagDictionary();`,
       const all = dictionaryTags(false);
       const explicit = dictionaryTags(true);
       const redirects = manager.getGameplayTagRedirects();
-      return `
-        <div class="metric-grid compact">
-          ${metric("explicit tags", explicit.length)}
-          ${metric("with parents", all.length)}
-          ${metric("redirects", redirects.length)}
-          ${metric("restricted", seedDictionary.restrictedGameplayTagList.length)}
-        </div>
-      `;
+      return consoleOutput([
+        ["explicitTags", explicit],
+        ["allTagsWithParents", all],
+        ["redirects", redirects],
+        ["registryCounts", registryCounts()]
+      ]);
     }
   };
 }
@@ -556,19 +1121,25 @@ const owned = makeGameplayTagContainer([
 owned.hasTag(requestGameplayTag("${state.required}"));
 owned.hasTagExact(requestGameplayTag("${state.required}"));
 owned.getGameplayTagParents().toJSON();`,
-    visual: renderContainerVisual,
+    visual: () => `
+      <div class="section-controls compact-controls">
+        ${renderSelector("Match against", "required", state.required)}
+        ${renderSelector("Exact check", "exact", state.exact)}
+      </div>
+      ${renderOwnedTagPicker()}
+      ${renderContainerVisual()}
+    `,
     output: () => {
       const container = ownedContainer();
       const required = requestGameplayTag(state.required, false);
       const firstOwned = container.first();
-      return `
-        <div class="metric-grid compact">
-          ${metric("num", container.num())}
-          ${metric("hasTag", required.isValid() ? container.hasTag(required) : false)}
-          ${metric("hasTagExact", required.isValid() ? container.hasTagExact(required) : false)}
-          ${metric("matchesTagDepth", firstOwned.isValid() && required.isValid() ? firstOwned.matchesTagDepth(required) : 0)}
-        </div>
-      `;
+      return consoleOutput([
+        ["owned.toJSON()", container.toJSON()],
+        ["owned.num()", container.num()],
+        [`owned.hasTag("${state.required}")`, required.isValid() ? container.hasTag(required) : false],
+        [`owned.hasTagExact("${state.required}")`, required.isValid() ? container.hasTagExact(required) : false],
+        ["firstOwned.matchesTagDepth(required)", firstOwned.isValid() && required.isValid() ? firstOwned.matchesTagDepth(required) : 0]
+      ]);
     }
   };
 }
@@ -590,6 +1161,9 @@ owned.filterExact(filter).toJSON();`,
       const container = ownedContainer();
       const filter = makeGameplayTagContainer([state.filter]);
       return `
+        <div class="section-controls compact-controls">
+          ${renderSelector("Filter by", "filter", state.filter)}
+        </div>
         <div class="split-output">
           <div>
             <h4>filter</h4>
@@ -605,14 +1179,12 @@ owned.filterExact(filter).toJSON();`,
     output: () => {
       const container = ownedContainer();
       const filter = makeGameplayTagContainer([state.filter]);
-      return `
-        <div class="metric-grid compact">
-          ${metric("filter matches", container.filter(filter).num())}
-          ${metric("exact matches", container.filterExact(filter).num())}
-          ${metric("filter tag", state.filter)}
-          ${metric("owned tags", container.num())}
-        </div>
-      `;
+      return consoleOutput([
+        ["filterTag", state.filter],
+        ["owned.filter(filter).toJSON()", container.filter(filter).toJSON()],
+        ["owned.filterExact(filter).toJSON()", container.filterExact(filter).toJSON()],
+        ["owned.num()", container.num()]
+      ]);
     }
   };
 }
@@ -621,82 +1193,66 @@ function queryStep(): GuideStep {
   return {
     id: "queries",
     kicker: "Recipe 4",
-    title: "Persist search state as gameplay tag queries.",
-    summary: "Query helpers turn note-app filters into serializable query objects that can be matched against containers or records.",
+    title: "Build custom gameplay tag queries.",
+    summary: "Build a query the same way Unreal does: choose a root expression, add rule and tag-container pairs, then compile the editable tree into a runtime query.",
     icon: "workflow",
     code: () => `
-const query = makeGameplayTagQueryFromFilters({
-  anyTags: ["${state.required}"],
-  noTags: ["${state.blocked}"],
-  exactAnyTags: ["${state.exact}"],
-  description: "notes filter"
-});
+const root = new FGameplayTagQueryExpression()
+  .${queryRootModes[state.queryRoot].method}();
+
+${queryRuleCode()}
+
+const query = FGameplayTagQuery.buildQuery(root, "RPG encounter query");
 
 const saved = stringifyGameplayTagQuery(query);
 const loaded = parseGameplayTagQuery(saved);
 
-filterGameplayTagQueryMatches(notes, loaded, (note) => note.tags);`,
+filterGameplayTagQueryMatches(encounters, loaded, (encounter) => encounter.tags);`,
     visual: renderQueryVisual,
     output: () => {
-      const query = makeGameplayTagQueryFromFilters({
-        anyTags: [state.required],
-        noTags: [state.blocked],
-        exactAnyTags: [state.exact],
-        description: "notes filter"
-      });
+      const query = buildCustomQuery();
       const saved = stringifyGameplayTagQuery(query);
       const loaded = parseGameplayTagQuery(saved);
       const container = ownedContainer();
-      return `
-        <div class="metric-grid compact">
-          ${metric("container matches", doesGameplayTagContainerMatchQuery(container, loaded))}
-          ${metric("round trip", loaded.equals(query))}
-          ${metric("query tags", loaded.getGameplayTagArray().length)}
-          ${metric("description", loaded.getDescription() || "auto")}
-        </div>
-      `;
+      return consoleOutput([
+        ["editableRootExpression", queryRootModes[state.queryRoot].expression],
+        ["editableRules", queryRuleSnapshot()],
+        ["doesGameplayTagContainerMatchQuery(owned, loaded)", doesGameplayTagContainerMatchQuery(container, loaded)],
+        ["loaded.equals(query)", loaded.equals(query)],
+        ["loaded.getDescription()", loaded.getDescription() || "auto"],
+        ["loaded.getGameplayTagArray()", tagNames(loaded.getGameplayTagArray())],
+        ["stringifyGameplayTagQuery(query)", JSON.parse(saved) as unknown]
+      ]);
     }
   };
 }
 
-function dictionaryFormatsStep(): GuideStep {
+function dictionaryExportStep(): GuideStep {
   return {
-    id: "formats",
+    id: "registry-export",
     kicker: "Recipe 5",
-    title: "Import and export JSON, CSV, or Unreal INI.",
-    summary: "The same dictionary shape can travel through structured JSON, spreadsheet-friendly CSV, or Unreal `DefaultGameplayTags.ini` style config.",
+    title: "Export dictionaries and containers.",
+    summary: "Export the global dictionary when tools need the catalog, or export a GameplayTagContainer when app data needs an actor, item, ability, or encounter tag set.",
     icon: "file-json",
     code: () => `
-const text = stringifyGameplayTagDictionary(
+const dictionaryText = stringifyGameplayTagDictionary(
   manager.exportGameplayTagDictionary(),
   "${state.dictionaryFormat}"
 );
 
-const parsed = parseGameplayTagDictionary(text, "${state.dictionaryFormat}");
-const validation = validateGameplayTagDictionary(parsed);`,
-    visual: renderDictionaryPreview,
-    output: () => `
-      <div class="data-editor">
-        <div class="data-toolbar">
-          <label class="field inline">
-            <span>Format</span>
-            <select data-field="dictionaryFormat">
-              <option value="json" ${state.dictionaryFormat === "json" ? "selected" : ""}>JSON</option>
-              <option value="csv" ${state.dictionaryFormat === "csv" ? "selected" : ""}>CSV</option>
-              <option value="ini" ${state.dictionaryFormat === "ini" ? "selected" : ""}>INI</option>
-            </select>
-          </label>
-          <button data-action="export-json" title="Export JSON"><i data-lucide="file-json"></i><span>JSON</span></button>
-          <button data-action="export-csv" title="Export CSV"><i data-lucide="table-properties"></i><span>CSV</span></button>
-          <button data-action="export-ini" title="Export INI"><i data-lucide="file-text"></i><span>INI</span></button>
-          <button data-action="validate" title="Validate dictionary"><i data-lucide="clipboard-check"></i><span>Validate</span></button>
-          <button data-action="import" title="Import dictionary"><i data-lucide="upload"></i><span>Import</span></button>
-          <button data-action="reset" title="Reset dictionary"><i data-lucide="rotate-ccw"></i><span>Reset</span></button>
-        </div>
-        <textarea data-field="dictionaryText" spellcheck="false">${escapeHtml(state.dictionaryText)}</textarea>
-        <div class="diagnostics">${renderDiagnostics()}</div>
-      </div>
-    `
+const actorPayload = {
+  actorId: "ashfall-pyromancer",
+  gameplayTags: ownedContainer.toJSON()
+};
+
+console.log(dictionaryText, actorPayload);`,
+    visual: renderExportSurfaces,
+    output: () => consoleOutput([
+      ["dictionaryExportFormat", state.dictionaryFormat],
+      ["registryCounts", registryCounts()],
+      ["stringifyGameplayTagDictionary(exported, format)", stringifyGameplayTagDictionary(manager.exportGameplayTagDictionary(), state.dictionaryFormat)],
+      ["selectedContainerPayload", selectedContainerPayload()]
+    ])
   };
 }
 
@@ -705,7 +1261,7 @@ function validationStep(): GuideStep {
     id: "validation",
     kicker: "Recipe 6",
     title: "Validate tag names before users commit them.",
-    summary: "Validation returns a safe fixed string plus readable diagnostics, so note apps can repair common mistakes before import.",
+    summary: "Validation returns a safe fixed string plus readable diagnostics, so RPG tools can repair common mistakes before import.",
     icon: "shield-check",
     code: () => `
 const result = GameplayTagsManager
@@ -718,6 +1274,12 @@ result.error;`,
     visual: () => {
       const result = manager.validateGameplayTagString(state.validation);
       return `
+        <div class="section-controls compact-controls">
+          <label class="field">
+            <span>Validate string</span>
+            <input data-field="validation" value="${escapeHtml(state.validation)}" />
+          </label>
+        </div>
         <div class="validation-strip ${result.isValid ? "ok" : "error"}">
           <span>${result.isValid ? "Valid tag" : "Needs repair"}</span>
           <strong>${escapeHtml(result.fixedString || "none")}</strong>
@@ -727,14 +1289,12 @@ result.error;`,
     },
     output: () => {
       const result = manager.validateGameplayTagString(state.validation);
-      return `
-        <div class="metric-grid compact">
-          ${metric("isValid", result.isValid)}
-          ${metric("fixedString", result.fixedString || "none")}
-          ${metric("error", result.error || "none")}
-          ${metric("input", state.validation)}
-        </div>
-      `;
+      return consoleOutput([
+        ["input", state.validation],
+        ["result.isValid", result.isValid],
+        ["result.fixedString", result.fixedString || "none"],
+        ["result.error", result.error || "none"]
+      ]);
     }
   };
 }
@@ -750,11 +1310,14 @@ function sourceStep(): GuideStep {
 const data = manager.getTagEditorData("${state.sourceTag}");
 const redirects = manager.getGameplayTagRedirects();
 
-redirectGameplayTagName("Note.Status.ReadyForReview");`,
+redirectGameplayTagName("Character.State.OnFire");`,
     visual: () => {
       const data = manager.getTagEditorData(state.sourceTag);
       const redirects = manager.getGameplayTagRedirects();
       return `
+        <div class="section-controls compact-controls">
+          ${renderSelector("Source data", "sourceTag", state.sourceTag)}
+        </div>
         <div class="source-card">
           <div>
             <span>Selected tag</span>
@@ -774,14 +1337,11 @@ redirectGameplayTagName("Note.Status.ReadyForReview");`,
     },
     output: () => {
       const data = manager.getTagEditorData(state.sourceTag);
-      return `
-        <div class="metric-grid compact">
-          ${metric("explicit", data?.isTagExplicit ?? false)}
-          ${metric("restricted", data?.isRestrictedTag ?? false)}
-          ${metric("source", data?.firstTagSource || "implicit")}
-          ${metric("redirect result", manager.redirectGameplayTagName("Note.Status.ReadyForReview"))}
-        </div>
-      `;
+      return consoleOutput([
+        ["selectedTag", state.sourceTag],
+        ["manager.getTagEditorData(selectedTag)", data ?? null],
+        ['manager.redirectGameplayTagName("Character.State.OnFire")', manager.redirectGameplayTagName("Character.State.OnFire")]
+      ]);
     }
   };
 }
@@ -805,26 +1365,25 @@ const same = owned.HasTag(requestGameplayTag("${state.required}"));`,
     output: () => {
       const container = ownedContainer();
       const exact = makeGameplayTagContainer([state.exact]);
-      return `
-        <div class="metric-grid compact">
-          ${metric("Blueprint hasAllTags", BlueprintGameplayTagLibrary.hasAllTags(container, exact, true))}
-          ${metric("Unreal alias HasTag", container.HasTag(requestGameplayTag(state.required, false)))}
-          ${metric("camelCase hasTag", container.hasTag(requestGameplayTag(state.required, false)))}
-          ${metric("same result", container.HasTag(requestGameplayTag(state.required, false)) === container.hasTag(requestGameplayTag(state.required, false)))}
-        </div>
-      `;
+      return consoleOutput([
+        ["BlueprintGameplayTagLibrary.hasAllTags(owned, exact, true)", BlueprintGameplayTagLibrary.hasAllTags(container, exact, true)],
+        ["owned.HasTag(required)", container.HasTag(requestGameplayTag(state.required, false))],
+        ["owned.hasTag(required)", container.hasTag(requestGameplayTag(state.required, false))],
+        ["aliasMatchesCamelCase", container.HasTag(requestGameplayTag(state.required, false)) === container.hasTag(requestGameplayTag(state.required, false))]
+      ]);
     }
   };
 }
 
 function guideSteps(): GuideStep[] {
   return [
+    registryInputStep(),
     installStep(),
     dictionaryStep(),
     containerStep(),
     filteringStep(),
     queryStep(),
-    dictionaryFormatsStep(),
+    dictionaryExportStep(),
     validationStep(),
     sourceStep(),
     blueprintStep()
@@ -848,7 +1407,7 @@ const publicApiFamilies = [
   {
     title: "Dictionary helpers",
     icon: "database",
-    summary: "Portable dictionaries for note apps, Unreal config, and table-like import/export.",
+    summary: "Portable dictionaries for RPG tools, Unreal config, and table-like import/export.",
     items: [
       "parseGameplayTagDictionary",
       "stringifyGameplayTagDictionary",
@@ -929,7 +1488,7 @@ function renderGuideStep(step: GuideStep, index: number): string {
           ${step.visual()}
         </div>
         <div class="example-output">
-          <h3>Live output</h3>
+          <h3>Console output</h3>
           ${step.output()}
         </div>
       </div>
@@ -976,7 +1535,6 @@ function renderApiAtlas(): string {
 function renderTopNav(): string {
   const links = [
     ["overview", "Overview"],
-    ["live-workbench", "Workbench"],
     ...guideSteps().map((step) => [step.id, step.title.split(" ").slice(0, 3).join(" ")]),
     ["api-atlas", "API atlas"]
   ];
@@ -998,11 +1556,11 @@ function renderHero(): string {
   return `
     <section class="hero guide-section" id="overview">
       <div class="hero-copy">
-        <span class="section-kicker">Developer guide + live workbench</span>
+        <span class="section-kicker">Developer guide for RPG tag systems</span>
         <h1>Gameplay tags for TypeScript tools that need Unreal-style semantics.</h1>
-        <p>Walk through the public API one example at a time. Every output below is computed from the package running in this page.</p>
+        <p>Build RPG ability, character, and encounter tags with the real package APIs. Every output below is computed from the package running in this page.</p>
         <div class="hero-actions">
-          <a href="#live-workbench" class="button-link"><i data-lucide="play"></i><span>Try examples</span></a>
+          <a href="#registry-input" class="button-link"><i data-lucide="play"></i><span>Import data</span></a>
           <a href="#api-atlas" class="button-link secondary"><i data-lucide="map"></i><span>View API atlas</span></a>
         </div>
       </div>
@@ -1014,7 +1572,7 @@ function renderHero(): string {
           ${metric("explicit tags", dictionaryTags(true).length)}
           ${metric("with parents", dictionaryTags(false).length)}
           ${metric("selected", state.owned.size)}
-          ${metric("query", makeGameplayTagQueryFromFilters({ anyTags: [state.required], noTags: [state.blocked] }).matches(ownedContainer()))}
+          ${metric("query", buildCustomQuery().matches(ownedContainer()))}
         </div>
       </div>
     </section>
@@ -1025,7 +1583,97 @@ function exportDictionary(format: GameplayTagDictionaryFormat): void {
   state.dictionaryFormat = format;
   state.dictionaryText = stringifyGameplayTagDictionary(manager.exportGameplayTagDictionary(), format);
   state.diagnostics = [];
-  state.importSummary = `${format.toUpperCase()} export ready`;
+  state.importSummary = `${format.toUpperCase()} dictionary text ready`;
+  render();
+}
+
+function containerTagListFromPayload(payload: unknown): string[] {
+  if (Array.isArray(payload)) {
+    return assertStringTagList(payload);
+  }
+
+  if (payload && typeof payload === "object") {
+    const record = payload as Record<string, unknown>;
+    const candidate = record.gameplayTags ?? record.tags ?? record.GameplayTags;
+
+    if (Array.isArray(candidate)) {
+      return assertStringTagList(candidate);
+    }
+  }
+
+  throw new Error("Expected a JSON tag array or an object with gameplayTags or tags.");
+}
+
+function assertStringTagList(values: unknown[]): string[] {
+  const invalidIndex = values.findIndex((value) => typeof value !== "string");
+
+  if (invalidIndex >= 0) {
+    throw new Error(`Tag at index ${invalidIndex} must be a string.`);
+  }
+
+  return [...new Set(values.map((value) => String(value).trim()).filter(Boolean))];
+}
+
+function parseContainerText(): { tags: string[]; invalidTags: string[]; container: ReturnType<typeof ownedContainer> } {
+  const payload = JSON.parse(state.containerText) as unknown;
+  const tags = containerTagListFromPayload(payload);
+  const invalidTags = tags.filter((tag) => !requestGameplayTag(tag, false).isValid());
+  const validTags = tags.filter((tag) => !invalidTags.includes(tag));
+
+  return {
+    tags,
+    invalidTags,
+    container: requestGameplayTagContainer(validTags, undefined, false)
+  };
+}
+
+function setContainerValidationResult(tags: string[], invalidTags: string[], action: "import" | "validate"): boolean {
+  state.containerErrors = invalidTags.map((tag) => `Unknown tag in current dictionary: ${tag}`);
+
+  if (invalidTags.length > 0) {
+    state.containerSummary = `${action === "import" ? "Import blocked" : "Invalid container"}: ${invalidTags.length} unknown tag${invalidTags.length === 1 ? "" : "s"}`;
+    return false;
+  }
+
+  state.containerSummary = `Valid container: ${tags.length} tag${tags.length === 1 ? "" : "s"}`;
+  return true;
+}
+
+function validateContainerText(): boolean {
+  try {
+    const parsed = parseContainerText();
+    const isValid = setContainerValidationResult(parsed.tags, parsed.invalidTags, "validate");
+    render();
+    return isValid;
+  } catch (error) {
+    state.containerErrors = [error instanceof Error ? error.message : "Could not parse container payload"];
+    state.containerSummary = "Container parse failed";
+    render();
+    return false;
+  }
+}
+
+function importContainerText(): void {
+  try {
+    const parsed = parseContainerText();
+
+    if (!setContainerValidationResult(parsed.tags, parsed.invalidTags, "import")) {
+      render();
+      return;
+    }
+
+    state.owned = new Set(parsed.container.toJSON());
+    syncContainerTextFromOwned(`Imported ${parsed.container.num()} tag${parsed.container.num() === 1 ? "" : "s"} into selected actor container`);
+    render();
+  } catch (error) {
+    state.containerErrors = [error instanceof Error ? error.message : "Could not parse container payload"];
+    state.containerSummary = "Container import failed";
+    render();
+  }
+}
+
+function exportContainerText(): void {
+  syncContainerTextFromOwned("Selected actor container exported");
   render();
 }
 
@@ -1063,12 +1711,13 @@ function importDictionary(): void {
 
     manager.reset();
     const result = importGameplayTagDictionary(parsed, {
-      sourceName: "ImportedNotes",
+      sourceName: "ImportedRpgTags",
       sourceType: sourceTypeForFormat(state.dictionaryFormat)
     });
     state.diagnostics = result.diagnostics;
     state.importSummary = `Imported ${result.importedTags.num()} tags: ${diagnosticSummary()}`;
     ensureSelections();
+    syncContainerTextFromOwned("Selected actor container refreshed against imported catalog");
     state.dictionaryText = stringifyGameplayTagDictionary(manager.exportGameplayTagDictionary(), state.dictionaryFormat);
     render();
   } catch (error) {
@@ -1082,8 +1731,20 @@ function importDictionary(): void {
   }
 }
 
-function handleAction(action: string): void {
+function handleAction(action: string, target?: HTMLElement): void {
   switch (action) {
+    case "add-query-rule":
+      addQueryRule();
+      break;
+    case "remove-query-rule":
+      removeQueryRule(target?.dataset.queryRuleId ?? "");
+      break;
+    case "add-query-rule-tag":
+      addQueryRuleTag(target?.dataset.queryRuleId ?? "");
+      break;
+    case "remove-query-rule-tag":
+      removeQueryRuleTag(target?.dataset.queryRuleId ?? "", Number(target?.dataset.queryRuleTagIndex ?? "-1"));
+      break;
     case "export-json":
       exportDictionary("json");
       break;
@@ -1093,11 +1754,20 @@ function handleAction(action: string): void {
     case "export-ini":
       exportDictionary("ini");
       break;
+    case "export-container":
+      exportContainerText();
+      break;
     case "validate":
       validateDictionaryText();
       break;
+    case "validate-container":
+      validateContainerText();
+      break;
     case "import":
       importDictionary();
+      break;
+    case "import-container":
+      importContainerText();
       break;
     case "reset":
       seed();
@@ -1125,8 +1795,28 @@ function bindInteractions(app: HTMLElement): void {
     input.addEventListener(eventName, () => setState(input.dataset.field as keyof typeof state, input.value));
   });
 
+  app.querySelectorAll<HTMLSelectElement>("[data-query-rule-field]").forEach((select) => {
+    select.addEventListener("change", () => {
+      updateQueryRule(
+        select.dataset.queryRuleId ?? "",
+        select.dataset.queryRuleField as "type",
+        select.value
+      );
+    });
+  });
+
+  app.querySelectorAll<HTMLSelectElement>("[data-query-rule-tag-index]").forEach((select) => {
+    select.addEventListener("change", () => {
+      updateQueryRuleTag(
+        select.dataset.queryRuleId ?? "",
+        Number(select.dataset.queryRuleTagIndex ?? "-1"),
+        select.value
+      );
+    });
+  });
+
   app.querySelectorAll<HTMLButtonElement>("[data-action]").forEach((button) => {
-    button.addEventListener("click", () => handleAction(button.dataset.action ?? ""));
+    button.addEventListener("click", () => handleAction(button.dataset.action ?? "", button));
   });
 
   app.querySelectorAll<HTMLButtonElement>("[data-format]").forEach((button) => {
@@ -1148,7 +1838,6 @@ function render(): void {
       ${renderTopNav()}
       <main class="guide-main">
         ${renderHero()}
-        ${renderLiveControls()}
         ${guideSteps().map((step, index) => renderGuideStep(step, index)).join("")}
         ${renderApiAtlas()}
       </main>
@@ -1170,11 +1859,13 @@ function render(): void {
       Layers3,
       Map,
       Play,
+      Plus,
       RotateCcw,
       Search,
       ShieldCheck,
       TableProperties,
       Tags,
+      Trash2,
       Upload,
       Workflow
     }

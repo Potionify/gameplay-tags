@@ -4,17 +4,6 @@ Unreal Engine-style gameplay tags for TypeScript and JavaScript apps.
 
 The package exposes TypeScript-friendly camelCase methods while keeping Unreal-style aliases for direct API mapping. That means `container.hasTag(tag)` and `container.HasTag(tag)` both work.
 
-## Packages
-
-- `@potionify/gameplay-tags`: official package.
-- `gameplay-tags`: small handoff package that re-exports the scoped package.
-
-The unscoped `gameplay-tags` package should be published only to protect the name and guide accidental installs. The Publish workflow automatically deprecates it after real publishes that include `gameplay-tags`. The manual command remains useful if the message needs to be repaired later:
-
-```sh
-npm deprecate gameplay-tags@"*" "Use the official package: @potionify/gameplay-tags"
-```
-
 ## Install
 
 ```sh
@@ -32,21 +21,23 @@ import {
 
 const tags = GameplayTagsManager.get();
 
-tags.addNativeGameplayTag("Note.Status.Draft");
-tags.addNativeGameplayTag("Note.Topic.Engine");
+tags.addNativeGameplayTag("Ability.Element.Fire");
+tags.addNativeGameplayTag("Character.Class.Mage");
 
 const owned = makeGameplayTagContainer([
-  "Note.Status.Draft",
-  "Note.Topic.Engine"
+  "Ability.Element.Fire",
+  "Character.Class.Mage"
 ]);
 
-owned.hasTag(requestGameplayTag("Note.Status"));
-owned.hasTagExact(requestGameplayTag("Note.Status"));
+owned.hasTag(requestGameplayTag("Ability.Element"));
+owned.hasTagExact(requestGameplayTag("Ability.Element"));
 ```
 
 ## Dictionary Tools
 
-The manager can import and export Unreal-style table rows, restricted table rows, and redirects. The same package helpers support JSON, CSV, and Unreal `DefaultGameplayTags.ini`-style strings for note apps that want portable tag dictionaries.
+The manager can import and export Unreal-style table rows, restricted table rows, and redirects. The same package helpers support JSON, CSV, and Unreal `DefaultGameplayTags.ini`-style strings for RPG tools that want portable tag dictionaries.
+
+Dictionaries are the global tag catalog: they define valid tags, redirects, restrictions, and editor metadata. A `FGameplayTagContainer` is the runtime tag set attached to one actor, item, ability, encounter, save row, or query input.
 
 ```ts
 import {
@@ -59,16 +50,16 @@ import {
 
 const result = importGameplayTagDictionary({
   gameplayTagList: [
-    { Tag: "Note.Status.Draft", DevComment: "Editable note" }
+    { Tag: "Ability.Element.Fire", DevComment: "Fire damage and spell effects" }
   ],
   restrictedGameplayTagList: [
-    { Tag: "Note.Internal.Archived", bAllowNonRestrictedChildren: true }
+    { Tag: "Character.Internal.DebugOnly", bAllowNonRestrictedChildren: true }
   ],
   gameplayTagRedirects: [
-    { OldTagName: "Note.Status.ReadyForReview", NewTagName: "Note.Status.Review" }
+    { OldTagName: "Character.State.OnFire", NewTagName: "Character.State.Burning" }
   ]
 }, {
-  sourceName: "Notes",
+  sourceName: "RpgTags",
   sourceType: EGameplayTagSourceType.TagList
 });
 
@@ -100,15 +91,15 @@ import {
 } from "@potionify/gameplay-tags";
 
 const query = makeGameplayTagQueryFromFilters({
-  anyTags: ["Note.Status"],
+  anyTags: ["Ability.Element"],
   noTags: ["Character.State"],
-  exactAnyTags: ["Note.Topic.Engine"]
+  exactAnyTags: ["Character.Class.Mage"]
 });
 
 const saved = stringifyGameplayTagQuery(query);
 const loaded = parseGameplayTagQuery(saved);
 
-const matches = filterGameplayTagQueryMatches(notes, loaded, (note) => note.tags);
+const matches = filterGameplayTagQueryMatches(encounters, loaded, (encounter) => encounter.tags);
 ```
 
 ## API Mapping
@@ -154,11 +145,10 @@ Recommended flow:
 
 ```sh
 npm version prerelease --preid alpha --workspaces
-npm publish -w @potionify/gameplay-tags --tag alpha
-npm publish -w gameplay-tags --tag alpha
+npm publish --workspaces --tag alpha
 ```
 
-The preferred publishing path is the manual GitHub Actions `Publish` workflow. It uses the repository `NPMJS_TOKEN` secret, runs `npm run check`, skips workspace versions that already exist on npm during real publish steps, publishes with provenance, automatically deprecates only the newly published unscoped handoff version after real runs that publish `gameplay-tags`, and requires an explicit confirmation before publishing with the `latest` dist-tag.
+The preferred publishing path is the manual GitHub Actions `Publish` workflow. It uses the repository `NPMJS_TOKEN` secret, runs `npm run check`, skips workspace versions that already exist on npm during real publish steps, publishes with provenance, and requires an explicit confirmation before publishing with the `latest` dist-tag.
 
 The `Publish` workflow has three publish modes:
 
@@ -166,19 +156,13 @@ The `Publish` workflow has three publish modes:
 - `dry run only`: validation path that does not publish or deprecate anything.
 - `publish only`: repair path for publishing after a separate dry run has already passed.
 
-Use the `Deprecate Unscoped Package` workflow only as a manual repair path if the deprecation message needs to be applied again:
-
-```sh
-npm deprecate gameplay-tags@"*" "Use the official package: @potionify/gameplay-tags"
-```
-
 After publishing, run a registry smoke test:
 
 ```sh
 npm run smoke:published
 ```
 
-The published smoke test installs both package names from npm and checks ESM/CJS imports, container matching, INI dictionary import/export, and query helper round-trips.
+The published smoke test installs from npm and checks ESM/CJS imports, container matching, INI dictionary import/export, and query helper round-trips.
 
 ## Beta Readiness
 
@@ -187,13 +171,11 @@ Before moving from `alpha` to `beta`:
 - Confirm `main` is green in CI.
 - Run `npm run check`.
 - Run `GAMEPLAY_TAGS_SMOKE_VERSION=alpha npm run smoke:published`.
-- Confirm the GitHub Pages workbench loads and exercises dictionary JSON/CSV/INI plus query helper flows.
+- Confirm the GitHub Pages guide loads and exercises dictionary JSON/CSV/INI plus query helper flows.
 - Review unresolved GitHub Copilot comments and either address or intentionally dismiss false positives.
-- Confirm `@potionify/gameplay-tags` and `gameplay-tags` have the same `alpha` version on npm.
-- Confirm `gameplay-tags` remains deprecated with the handoff message.
 - Update [CHANGELOG.md](CHANGELOG.md) with the beta release notes before publishing the beta version.
 
-When the checklist passes, publish a beta prerelease through the manual `Publish` workflow. Use `dist-tag=beta` and `publish-mode=dry run then publish` for both packages. Keep `latest` unchanged until beta has had real usage feedback.
+When the checklist passes, publish a beta prerelease through the manual `Publish` workflow. Use `dist-tag=beta` and `publish-mode=dry run then publish` for the workspace release. Keep `latest` unchanged until beta has had real usage feedback.
 
 The equivalent local versioning command is:
 
