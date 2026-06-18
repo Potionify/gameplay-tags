@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.0-beta.0 - 2026-06-17
+
+- Promoted the current gameplay tag API surface to beta for broader integration feedback.
+- Included ESM/CJS builds, Unreal-style class and method aliases, and TypeScript-friendly camelCase helpers.
+- Included dictionary import/export for JSON, CSV, and Unreal `DefaultGameplayTags.ini`-style config files.
+- Included gameplay tag query creation, JSON round-tripping, matching, and tagged record filtering helpers.
+- Included the Vite workbench for GitHub Pages with dictionary and query workflows.
+- Hardened release automation with explicit publish modes and version-scoped unscoped package deprecation.
+
 ## 0.1.0-alpha.4 - 2026-06-17
 
 - Added gameplay tag query JSON helpers: `parseGameplayTagQuery`, `stringifyGameplayTagQuery`, `fromJSON`, `clone`, and `equals`.
