@@ -1,0 +1,51 @@
+name: Bug report
+description: Report a reproducible issue with the package or example app.
+title: "[Bug]: "
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Package version
+      description: Which package version shows the issue?
+      placeholder: "@potionify/gameplay-tags@0.1.0-beta.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Runtime or environment
+      options:
+        - Node.js ESM
+        - Node.js CJS
+        - Browser or bundler
+        - GitHub Pages workbench
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: current
+    attributes:
+      label: Current behavior
+      description: What happened?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      description: What did you expect to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Share the smallest code sample, dictionary, query, or steps that reproduce the issue.
+      render: ts
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: Include package manager, Node.js version, bundler, browser, or Unreal config details if relevant.

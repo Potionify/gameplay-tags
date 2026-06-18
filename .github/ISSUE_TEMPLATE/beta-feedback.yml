@@ -1,0 +1,50 @@
+name: Beta feedback
+description: Share integration feedback from trying the beta package.
+title: "[Beta]: "
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for trying the beta. Feedback from real note-app or tool integrations is especially helpful before the stable release.
+  - type: input
+    id: version
+    attributes:
+      label: Package version
+      description: Which version did you test?
+      placeholder: "@potionify/gameplay-tags@0.1.0-beta.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Feedback area
+      options:
+        - Unreal API mapping
+        - TypeScript API ergonomics
+        - Dictionary import/export
+        - Gameplay tag queries
+        - ESM/CJS packaging
+        - GitHub Pages workbench
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: scenario
+    attributes:
+      label: Scenario
+      description: What were you trying to build or integrate?
+      placeholder: I am building a note app that imports DefaultGameplayTags.ini files from an Unreal project.
+    validations:
+      required: true
+  - type: textarea
+    id: feedback
+    attributes:
+      label: Feedback
+      description: What felt missing, confusing, or especially useful?
+    validations:
+      required: true
+  - type: textarea
+    id: examples
+    attributes:
+      label: Examples
+      description: Include code snippets, tag dictionaries, or query shapes if they help explain the feedback.
+      render: ts
