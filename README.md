@@ -10,6 +10,14 @@ The package exposes TypeScript-friendly camelCase methods while keeping Unreal-s
 npm install @potionify/gameplay-tags
 ```
 
+For the current beta release:
+
+```sh
+npm install @potionify/gameplay-tags@beta
+```
+
+Use `@potionify/gameplay-tags` for application code. The unscoped `gameplay-tags` package exists only as a handoff package for accidental installs.
+
 ## Usage
 
 ```ts
@@ -126,6 +134,14 @@ npm run dev
 ```
 
 The Vite example lives in `examples/basic` and is configured for GitHub Pages. The Pages workflow builds the app with `/gameplay-tags/` as its base path.
+
+Try the hosted workbench at [potionify.github.io/gameplay-tags](https://potionify.github.io/gameplay-tags/).
+
+## Beta Feedback
+
+The beta release is intended for integration feedback before promoting a stable `latest` release. Useful feedback includes Unreal API mapping gaps, note-app dictionary import/export needs, query helper ergonomics, and any ESM/CJS packaging issues.
+
+Open a [beta feedback issue](https://github.com/Potionify/gameplay-tags/issues/new?template=beta-feedback.yml) or a [bug report](https://github.com/Potionify/gameplay-tags/issues/new?template=bug-report.yml) with a small reproduction when possible.
 
 ## Changelog
 
