@@ -11,16 +11,16 @@ import {
 
 const tags = GameplayTagsManager.get();
 
-tags.addNativeGameplayTag("Note.Status.Draft");
-tags.addNativeGameplayTag("Note.Topic.Engine");
+tags.addNativeGameplayTag("Ability.Element.Fire");
+tags.addNativeGameplayTag("Character.Class.Mage");
 
 const owned = makeGameplayTagContainer([
-  "Note.Status.Draft",
-  "Note.Topic.Engine"
+  "Ability.Element.Fire",
+  "Character.Class.Mage"
 ]);
 
-owned.hasTag(requestGameplayTag("Note.Status"));
-owned.hasTagExact(requestGameplayTag("Note.Status"));
+owned.hasTag(requestGameplayTag("Ability.Element"));
+owned.hasTagExact(requestGameplayTag("Ability.Element"));
 ```
 
 The public surface mirrors Unreal naming where it makes sense in JavaScript: `FGameplayTag`, `FGameplayTagContainer`, `FGameplayTagQuery`, `FGameplayTagQueryExpression`, `UGameplayTagsManager`, and `UBlueprintGameplayTagLibrary`.
@@ -43,6 +43,8 @@ CamelCase aliases are the primary TypeScript style. Unreal-style method names re
 
 Dictionary helpers are included for tools that need to read and write gameplay tag lists:
 
+Dictionaries are the global catalog of valid tags and metadata. Containers are the runtime tag sets you attach to actors, items, abilities, save records, or query inputs.
+
 ```ts
 import {
   GameplayTagsManager,
@@ -52,9 +54,9 @@ import {
 } from "@potionify/gameplay-tags";
 
 importGameplayTagDictionary({
-  gameplayTagList: [{ Tag: "Note.Status.Draft" }],
+  gameplayTagList: [{ Tag: "Ability.Element.Fire" }],
   gameplayTagRedirects: [
-    { OldTagName: "Note.Status.ReadyForReview", NewTagName: "Note.Status.Review" }
+    { OldTagName: "Character.State.OnFire", NewTagName: "Character.State.Burning" }
   ]
 });
 
@@ -84,11 +86,11 @@ import {
 } from "@potionify/gameplay-tags";
 
 const query = makeGameplayTagQueryFromFilters({
-  anyTags: ["Note.Status"],
+  anyTags: ["Ability.Element"],
   noTags: ["Character.State"],
-  exactAnyTags: ["Note.Topic.Engine"]
+  exactAnyTags: ["Character.Class.Mage"]
 });
 
 const loaded = parseGameplayTagQuery(stringifyGameplayTagQuery(query));
-const matches = filterGameplayTagQueryMatches(notes, loaded, (note) => note.tags);
+const matches = filterGameplayTagQueryMatches(encounters, loaded, (encounter) => encounter.tags);
 ```
